@@ -159,6 +159,14 @@ async function createSubscription(accessToken, subscriptionData, context) {
 
             context.log('Subscription created successfully:', response.data.id);
 
+            // Sync to SharePoint list
+            try {
+                await syncWebhookToSharePoint(accessToken, response.data, 'created', context);
+            } catch (syncError) {
+                context.log.error('Failed to sync to SharePoint:', syncError);
+                // Continue even if sync fails
+            }
+
             return {
                 status: 201,
                 headers: {
@@ -207,6 +215,14 @@ async function deleteSubscription(accessToken, subscriptionId, context) {
 
         context.log('Subscription deleted successfully:', subscriptionId);
 
+        // Sync to SharePoint list
+        try {
+            await syncWebhookToSharePoint(accessToken, { id: subscriptionId }, 'deleted', context);
+        } catch (syncError) {
+            context.log.error('Failed to sync to SharePoint:', syncError);
+            // Continue even if sync fails
+        }
+
         return {
             status: 200,
             body: JSON.stringify({
@@ -224,5 +240,74 @@ async function deleteSubscription(accessToken, subscriptionId, context) {
                 details: error.response?.data || error.message
             })
         };
+    }
+}
+
+async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
+    try {
+        const siteUrl = process.env.SHAREPOINT_SITE_URL || 'https://fambrandsllc.sharepoint.com/sites/sphookmanagement';
+        const listId = process.env.WEBHOOK_LIST_ID || '30516097-c58c-478c-b87f-76c8f6ce2b56';
+        
+        if (action === 'created') {
+            // Add webhook to SharePoint list
+            const itemData = {
+                Title: webhook.resource || 'Unknown Resource',
+                SubscriptionId: webhook.id,
+                Resource: webhook.resource,
+                ChangeType: webhook.changeType,
+                NotificationUrl: webhook.notificationUrl,
+                ExpirationDateTime: webhook.expirationDateTime,
+                ClientState: webhook.clientState || '',
+                ApplicationId: webhook.applicationId || '',
+                CreatorId: webhook.creatorId || '',
+                Status: 'Active',
+                CreatedDateTime: new Date().toISOString(),
+                LastSyncDateTime: new Date().toISOString()
+            };
+            
+            const apiUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items`;
+            await axios.post(apiUrl, itemData, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            context.log('Webhook synced to SharePoint list:', webhook.id);
+            
+        } else if (action === 'deleted') {
+            // Find and update the item in SharePoint list
+            const searchUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items?$filter=SubscriptionId eq '${webhook.id}'`;
+            const searchResponse = await axios.get(searchUrl, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Accept': 'application/json'
+                }
+            });
+            
+            if (searchResponse.data.value && searchResponse.data.value.length > 0) {
+                const itemId = searchResponse.data.value[0].Id;
+                const updateUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items(${itemId})`;
+                
+                await axios.patch(updateUrl, {
+                    Status: 'Deleted',
+                    DeletedDateTime: new Date().toISOString(),
+                    LastSyncDateTime: new Date().toISOString()
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'IF-MATCH': '*'
+                    }
+                });
+                
+                context.log('Webhook marked as deleted in SharePoint list:', webhook.id);
+            }
+        }
+    } catch (error) {
+        context.log.error('Error syncing to SharePoint:', error.response?.data || error.message);
+        throw error;
     }
 }

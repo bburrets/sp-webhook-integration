@@ -1,4 +1,5 @@
 const { app } = require('@azure/functions');
+const axios = require('axios');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -113,6 +114,14 @@ async function processNotification(notification, context) {
             listId: resourceData?.listId
         });
 
+        // Update notification count in SharePoint list
+        try {
+            await updateNotificationCount(subscriptionId, context);
+        } catch (updateError) {
+            context.log.error('Failed to update notification count:', updateError);
+            // Continue processing even if update fails
+        }
+
         // Here you can add your business logic to handle the changes
         // For example:
         // - Send notifications
@@ -124,6 +133,68 @@ async function processNotification(notification, context) {
 
     } catch (error) {
         context.log.error('Error processing individual notification:', error);
+        throw error;
+    }
+}
+
+async function updateNotificationCount(subscriptionId, context) {
+    try {
+        // Get access token
+        const clientId = process.env.AZURE_CLIENT_ID;
+        const clientSecret = process.env.AZURE_CLIENT_SECRET;
+        const tenantId = process.env.AZURE_TENANT_ID;
+        const siteUrl = process.env.SHAREPOINT_SITE_URL || 'https://fambrandsllc.sharepoint.com/sites/sphookmanagement';
+        const listId = process.env.WEBHOOK_LIST_ID || '30516097-c58c-478c-b87f-76c8f6ce2b56';
+        
+        // Get access token
+        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+        const tokenParams = new URLSearchParams();
+        tokenParams.append('client_id', clientId);
+        tokenParams.append('client_secret', clientSecret);
+        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
+        tokenParams.append('grant_type', 'client_credentials');
+
+        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+        
+        const accessToken = tokenResponse.data.access_token;
+        
+        // Find the item in SharePoint list
+        const searchUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items?$filter=SubscriptionId eq '${subscriptionId}'`;
+        const searchResponse = await axios.get(searchUrl, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (searchResponse.data.value && searchResponse.data.value.length > 0) {
+            const item = searchResponse.data.value[0];
+            const itemId = item.Id;
+            const currentCount = item.NotificationCount || 0;
+            
+            // Update the notification count
+            const updateUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items(${itemId})`;
+            await axios.patch(updateUrl, {
+                NotificationCount: currentCount + 1,
+                LastNotificationDateTime: new Date().toISOString(),
+                LastSyncDateTime: new Date().toISOString()
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'IF-MATCH': '*'
+                }
+            });
+            
+            context.log(`Updated notification count for webhook ${subscriptionId}: ${currentCount + 1}`);
+        }
+    } catch (error) {
+        context.log.error('Error updating notification count:', error.message);
         throw error;
     }
 }
