@@ -1,0 +1,16 @@
+{
+  "name": "sharepoint-webhooks",
+  "version": "1.0.0",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@azure/functions": "^4.7.2-preview",
+    "axios": "^1.11.0"
+  }
+}
