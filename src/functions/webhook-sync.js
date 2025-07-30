@@ -50,11 +50,13 @@ app.http('webhook-sync', {
 
         } catch (error) {
             context.log.error('Error in webhook sync:', error);
+            context.log.error('Error stack:', error.stack);
             return {
                 status: 500,
                 body: JSON.stringify({
                     error: 'Sync failed',
-                    details: error.message
+                    details: error.message,
+                    stack: error.stack
                 })
             };
         }
@@ -152,13 +154,14 @@ async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context
             let listName = 'Unknown List';
             let siteUrl = '';
             let listIdValue = '';
+            let resourceType = 'List'; // Default
             
             if (webhook.resource) {
                 const parts = webhook.resource.split('/lists/');
                 siteUrl = parts[0];
                 listIdValue = parts[1];
                 
-                // Try to get the actual list name from Graph API
+                // Try to get the actual list name and type from Graph API
                 try {
                     const sitePathForList = siteUrl.replace('sites/', '');
                     const listUrl = `https://graph.microsoft.com/v1.0/sites/${sitePathForList}/lists/${listIdValue}`;
@@ -169,15 +172,21 @@ async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context
                         }
                     });
                     listName = listResponse.data.displayName || listResponse.data.name || `List ${listIdValue}`;
+                    
+                    // Determine if it's a Document Library
+                    if (listResponse.data.list && listResponse.data.list.template === 'documentLibrary') {
+                        resourceType = 'Library';
+                    }
                 } catch (listError) {
-                    context.log.warn(`Could not fetch list name for ${listIdValue}:`, listError.message);
+                    context.log.warn(`Could not fetch list details for ${listIdValue}:`, listError.message);
+                    context.log.warn(`Error response:`, listError.response?.data);
                     listName = `List ${listIdValue}`;
                 }
             }
             
             const itemData = {
                 fields: {
-                    Title: webhook.resource || 'Unknown Resource',
+                    Title: `${resourceType} - ${listName}`,
                     SubscriptionId: webhook.id,
                     ChangeType: webhook.changeType,
                     NotificationUrl: webhook.notificationUrl,
@@ -186,6 +195,7 @@ async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context
                     SiteUrl: siteUrl,
                     ListId: listIdValue,
                     ListName: listName,
+                    ResourceType: resourceType,
                     AutoRenew: true,
                     NotificationCount: existingItem ? existingItem.fields.NotificationCount || 0 : 0
                 }

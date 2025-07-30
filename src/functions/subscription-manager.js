@@ -260,7 +260,8 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 siteUrl = parts[0];
                 listIdValue = parts[1];
                 
-                // Try to get the actual list name from Graph API
+                // Try to get the actual list name and type from Graph API
+                let resourceType = 'List'; // Default
                 try {
                     const sitePathForList = siteUrl.replace('sites/', '');
                     const listUrl = `https://graph.microsoft.com/v1.0/sites/${sitePathForList}/lists/${listIdValue}`;
@@ -271,8 +272,13 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                         }
                     });
                     listName = listResponse.data.displayName || listResponse.data.name || `List ${listIdValue}`;
+                    
+                    // Determine if it's a Document Library
+                    if (listResponse.data.list && listResponse.data.list.template === 'documentLibrary') {
+                        resourceType = 'Library';
+                    }
                 } catch (listError) {
-                    context.log.warn(`Could not fetch list name for ${listIdValue}:`, listError.message);
+                    context.log.warn(`Could not fetch list details for ${listIdValue}:`, listError.message);
                     listName = `List ${listIdValue}`;
                 }
             }
@@ -280,7 +286,7 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
             // Add webhook to SharePoint list using Graph API
             const itemData = {
                 fields: {
-                    Title: webhook.resource || 'Unknown Resource',
+                    Title: `${resourceType} - ${listName}`,
                     SubscriptionId: webhook.id,
                     ChangeType: webhook.changeType,
                     NotificationUrl: webhook.notificationUrl,
@@ -289,6 +295,7 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                     SiteUrl: siteUrl,
                     ListId: listIdValue,
                     ListName: listName,
+                    ResourceType: resourceType,
                     AutoRenew: true,
                     NotificationCount: 0
                 }
@@ -307,7 +314,8 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
             
         } else if (action === 'deleted') {
             // Find and update the item in SharePoint list using Graph API
-            const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields&$filter=fields/SubscriptionId eq '${webhook.id}'`;
+            // Note: Can't filter by SubscriptionId as it's not indexed, so we get all items and filter in memory
+            const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
             const searchResponse = await axios.get(searchUrl, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -315,9 +323,13 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 }
             });
             
-            if (searchResponse.data.value && searchResponse.data.value.length > 0) {
-                const itemId = searchResponse.data.value[0].id;
-                const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}`;
+            // Find the item with matching SubscriptionId
+            const matchingItem = searchResponse.data.value?.find(item => 
+                item.fields && item.fields.SubscriptionId === webhook.id
+            );
+            
+            if (matchingItem) {
+                const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${matchingItem.id}`;
                 
                 await axios.patch(updateUrl, {
                     fields: {
@@ -332,6 +344,8 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 });
                 
                 context.log('Webhook marked as deleted in SharePoint list:', webhook.id);
+            } else {
+                context.log.warn('Webhook not found in SharePoint list:', webhook.id);
             }
         }
     } catch (error) {

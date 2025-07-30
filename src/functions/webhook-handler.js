@@ -163,7 +163,8 @@ async function updateNotificationCount(subscriptionId, context) {
         const accessToken = tokenResponse.data.access_token;
         
         // Find the item in SharePoint list using Graph API
-        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields&$filter=fields/SubscriptionId eq '${subscriptionId}'`;
+        // Note: Can't filter by SubscriptionId as it's not indexed, so we get all items and filter in memory
+        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
         const searchResponse = await axios.get(searchUrl, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -171,8 +172,13 @@ async function updateNotificationCount(subscriptionId, context) {
             }
         });
         
-        if (searchResponse.data.value && searchResponse.data.value.length > 0) {
-            const item = searchResponse.data.value[0];
+        // Find the item with matching SubscriptionId
+        const matchingItem = searchResponse.data.value?.find(item => 
+            item.fields && item.fields.SubscriptionId === subscriptionId
+        );
+        
+        if (matchingItem) {
+            const item = matchingItem;
             
             // Check if webhook is marked as deleted
             if (item.fields.Status === 'Deleted') {
