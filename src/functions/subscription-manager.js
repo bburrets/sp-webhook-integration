@@ -163,7 +163,8 @@ async function createSubscription(accessToken, subscriptionData, context) {
             try {
                 await syncWebhookToSharePoint(accessToken, response.data, 'created', context);
             } catch (syncError) {
-                context.log.error('Failed to sync to SharePoint:', syncError);
+                context.log.error('Failed to sync to SharePoint:', syncError.message);
+                context.log.error('Sync error details:', syncError.response?.data || syncError);
                 // Continue even if sync fails
             }
 
@@ -245,27 +246,55 @@ async function deleteSubscription(accessToken, subscriptionId, context) {
 
 async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
     try {
-        const siteUrl = process.env.SHAREPOINT_SITE_URL || 'https://fambrandsllc.sharepoint.com/sites/sphookmanagement';
-        const listId = process.env.WEBHOOK_LIST_ID || '30516097-c58c-478c-b87f-76c8f6ce2b56';
+        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
         
         if (action === 'created') {
-            // Add webhook to SharePoint list
+            // Extract site and list info from resource
+            let listName = 'Unknown List';
+            let siteUrl = '';
+            let listIdValue = '';
+            
+            if (webhook.resource) {
+                const parts = webhook.resource.split('/lists/');
+                siteUrl = parts[0];
+                listIdValue = parts[1];
+                
+                // Try to get the actual list name from Graph API
+                try {
+                    const sitePathForList = siteUrl.replace('sites/', '');
+                    const listUrl = `https://graph.microsoft.com/v1.0/sites/${sitePathForList}/lists/${listIdValue}`;
+                    const listResponse = await axios.get(listUrl, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Accept': 'application/json'
+                        }
+                    });
+                    listName = listResponse.data.displayName || listResponse.data.name || `List ${listIdValue}`;
+                } catch (listError) {
+                    context.log.warn(`Could not fetch list name for ${listIdValue}:`, listError.message);
+                    listName = `List ${listIdValue}`;
+                }
+            }
+            
+            // Add webhook to SharePoint list using Graph API
             const itemData = {
-                Title: webhook.resource || 'Unknown Resource',
-                SubscriptionId: webhook.id,
-                Resource: webhook.resource,
-                ChangeType: webhook.changeType,
-                NotificationUrl: webhook.notificationUrl,
-                ExpirationDateTime: webhook.expirationDateTime,
-                ClientState: webhook.clientState || '',
-                ApplicationId: webhook.applicationId || '',
-                CreatorId: webhook.creatorId || '',
-                Status: 'Active',
-                CreatedDateTime: new Date().toISOString(),
-                LastSyncDateTime: new Date().toISOString()
+                fields: {
+                    Title: webhook.resource || 'Unknown Resource',
+                    SubscriptionId: webhook.id,
+                    ChangeType: webhook.changeType,
+                    NotificationUrl: webhook.notificationUrl,
+                    ExpirationDateTime: webhook.expirationDateTime,
+                    Status: 'Active',
+                    SiteUrl: siteUrl,
+                    ListId: listIdValue,
+                    ListName: listName,
+                    AutoRenew: true,
+                    NotificationCount: 0
+                }
             };
             
-            const apiUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items`;
+            const apiUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items`;
             await axios.post(apiUrl, itemData, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -277,8 +306,8 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
             context.log('Webhook synced to SharePoint list:', webhook.id);
             
         } else if (action === 'deleted') {
-            // Find and update the item in SharePoint list
-            const searchUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items?$filter=SubscriptionId eq '${webhook.id}'`;
+            // Find and update the item in SharePoint list using Graph API
+            const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields&$filter=fields/SubscriptionId eq '${webhook.id}'`;
             const searchResponse = await axios.get(searchUrl, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -287,19 +316,18 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
             });
             
             if (searchResponse.data.value && searchResponse.data.value.length > 0) {
-                const itemId = searchResponse.data.value[0].Id;
-                const updateUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items(${itemId})`;
+                const itemId = searchResponse.data.value[0].id;
+                const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}`;
                 
                 await axios.patch(updateUrl, {
-                    Status: 'Deleted',
-                    DeletedDateTime: new Date().toISOString(),
-                    LastSyncDateTime: new Date().toISOString()
+                    fields: {
+                        Status: 'Deleted'
+                    }
                 }, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'IF-MATCH': '*'
+                        'Accept': 'application/json'
                     }
                 });
                 

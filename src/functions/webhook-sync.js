@@ -1,7 +1,7 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
 
-// Sync webhooks to SharePoint list
+// Sync webhooks to SharePoint list using Microsoft Graph API
 app.http('webhook-sync', {
     methods: ['POST'],
     authLevel: 'function',
@@ -13,8 +13,10 @@ app.http('webhook-sync', {
             const clientId = process.env.AZURE_CLIENT_ID;
             const clientSecret = process.env.AZURE_CLIENT_SECRET;
             const tenantId = process.env.AZURE_TENANT_ID;
-            const siteUrl = process.env.SHAREPOINT_SITE_URL || 'https://fambrandsllc.sharepoint.com/sites/sphookmanagement';
-            const listId = process.env.WEBHOOK_LIST_ID || '30516097-c58c-478c-b87f-76c8f6ce2b56';
+            const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+            
+            // Using the site path format from the webhook resource
+            const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
             
             if (!clientId || !clientSecret || !tenantId) {
                 return {
@@ -31,8 +33,8 @@ app.http('webhook-sync', {
             // Get all webhooks from Microsoft Graph
             const webhooks = await getWebhooks(accessToken, context);
             
-            // Sync to SharePoint list
-            const syncResult = await syncToSharePoint(accessToken, siteUrl, listId, webhooks, context);
+            // Sync to SharePoint list using Graph API
+            const syncResult = await syncToSharePoint(accessToken, sitePath, listId, webhooks, context);
             
             return {
                 status: 200,
@@ -69,12 +71,12 @@ app.timer('webhook-sync-timer', {
             const clientId = process.env.AZURE_CLIENT_ID;
             const clientSecret = process.env.AZURE_CLIENT_SECRET;
             const tenantId = process.env.AZURE_TENANT_ID;
-            const siteUrl = process.env.SHAREPOINT_SITE_URL || 'https://fambrandsllc.sharepoint.com/sites/sphookmanagement';
-            const listId = process.env.WEBHOOK_LIST_ID || '30516097-c58c-478c-b87f-76c8f6ce2b56';
+            const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+            const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
             
             const accessToken = await getAccessToken(clientId, clientSecret, tenantId, context);
             const webhooks = await getWebhooks(accessToken, context);
-            await syncToSharePoint(accessToken, siteUrl, listId, webhooks, context);
+            await syncToSharePoint(accessToken, sitePath, listId, webhooks, context);
             
             context.log('Timer sync completed successfully');
         } catch (error) {
@@ -123,15 +125,15 @@ async function getWebhooks(accessToken, context) {
     }
 }
 
-async function syncToSharePoint(accessToken, siteUrl, listId, webhooks, context) {
+async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context) {
     try {
-        // Get existing items from SharePoint list
-        const existingItems = await getSharePointListItems(accessToken, siteUrl, listId, context);
+        // Get existing items from SharePoint list using Graph API
+        const existingItems = await getSharePointListItems(accessToken, sitePath, listId, context);
         
         // Create a map of existing webhooks by subscription ID
         const existingMap = new Map();
         existingItems.forEach(item => {
-            if (item.fields.SubscriptionId) {
+            if (item.fields && item.fields.SubscriptionId) {
                 existingMap.set(item.fields.SubscriptionId, item);
             }
         });
@@ -146,40 +148,80 @@ async function syncToSharePoint(accessToken, siteUrl, listId, webhooks, context)
         for (const webhook of webhooks) {
             const existingItem = existingMap.get(webhook.id);
             
+            // Extract site and list info from resource
+            let listName = 'Unknown List';
+            let siteUrl = '';
+            let listIdValue = '';
+            
+            if (webhook.resource) {
+                const parts = webhook.resource.split('/lists/');
+                siteUrl = parts[0];
+                listIdValue = parts[1];
+                
+                // Try to get the actual list name from Graph API
+                try {
+                    const sitePathForList = siteUrl.replace('sites/', '');
+                    const listUrl = `https://graph.microsoft.com/v1.0/sites/${sitePathForList}/lists/${listIdValue}`;
+                    const listResponse = await axios.get(listUrl, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Accept': 'application/json'
+                        }
+                    });
+                    listName = listResponse.data.displayName || listResponse.data.name || `List ${listIdValue}`;
+                } catch (listError) {
+                    context.log.warn(`Could not fetch list name for ${listIdValue}:`, listError.message);
+                    listName = `List ${listIdValue}`;
+                }
+            }
+            
             const itemData = {
-                Title: webhook.resource || 'Unknown Resource',
-                SubscriptionId: webhook.id,
-                Resource: webhook.resource,
-                ChangeType: webhook.changeType,
-                NotificationUrl: webhook.notificationUrl,
-                ExpirationDateTime: webhook.expirationDateTime,
-                ClientState: webhook.clientState || '',
-                ApplicationId: webhook.applicationId || '',
-                CreatorId: webhook.creatorId || '',
-                Status: 'Active',
-                LastSyncDateTime: new Date().toISOString()
+                fields: {
+                    Title: webhook.resource || 'Unknown Resource',
+                    SubscriptionId: webhook.id,
+                    ChangeType: webhook.changeType,
+                    NotificationUrl: webhook.notificationUrl,
+                    ExpirationDateTime: webhook.expirationDateTime,
+                    Status: 'Active',
+                    SiteUrl: siteUrl,
+                    ListId: listIdValue,
+                    ListName: listName,
+                    AutoRenew: true,
+                    NotificationCount: existingItem ? existingItem.fields.NotificationCount || 0 : 0
+                }
             };
 
-            if (existingItem) {
-                // Update existing item
-                await updateSharePointListItem(accessToken, siteUrl, listId, existingItem.id, itemData, context);
-                results.updated++;
-                existingMap.delete(webhook.id); // Remove from map to track what's left
-            } else {
-                // Create new item
-                await createSharePointListItem(accessToken, siteUrl, listId, itemData, context);
-                results.created++;
+            try {
+                if (existingItem) {
+                    // Update existing item
+                    await updateSharePointListItem(accessToken, sitePath, listId, existingItem.id, itemData, context);
+                    results.updated++;
+                    existingMap.delete(webhook.id); // Remove from map to track what's left
+                } else {
+                    // Create new item
+                    await createSharePointListItem(accessToken, sitePath, listId, itemData, context);
+                    results.created++;
+                }
+            } catch (itemError) {
+                context.log.error(`Failed to sync webhook ${webhook.id}:`, itemError.message);
+                // Continue with other webhooks
             }
         }
 
         // Mark remaining items as deleted (no longer exist in Graph)
         for (const [subscriptionId, item] of existingMap) {
-            const updateData = {
-                Status: 'Deleted',
-                LastSyncDateTime: new Date().toISOString()
-            };
-            await updateSharePointListItem(accessToken, siteUrl, listId, item.id, updateData, context);
-            results.deleted++;
+            try {
+                const updateData = {
+                    fields: {
+                        Status: 'Deleted'
+                    }
+                };
+                await updateSharePointListItem(accessToken, sitePath, listId, item.id, updateData, context);
+                results.deleted++;
+            } catch (deleteError) {
+                context.log.error(`Failed to mark webhook ${subscriptionId} as deleted:`, deleteError.message);
+                // Continue with other items
+            }
         }
 
         context.log('Sync results:', results);
@@ -191,9 +233,9 @@ async function syncToSharePoint(accessToken, siteUrl, listId, webhooks, context)
     }
 }
 
-async function getSharePointListItems(accessToken, siteUrl, listId, context) {
+async function getSharePointListItems(accessToken, sitePath, listId, context) {
     try {
-        const apiUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items?$select=*&$top=5000`;
+        const apiUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields&$top=5000`;
         
         const response = await axios.get(apiUrl, {
             headers: {
@@ -204,16 +246,16 @@ async function getSharePointListItems(accessToken, siteUrl, listId, context) {
 
         return response.data.value || [];
     } catch (error) {
-        context.log.error('Error getting SharePoint list items:', error);
+        context.log.error('Error getting SharePoint list items:', error.response?.data || error.message);
         return [];
     }
 }
 
-async function createSharePointListItem(accessToken, siteUrl, listId, itemData, context) {
+async function createSharePointListItem(accessToken, sitePath, listId, itemData, context) {
     try {
-        const apiUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items`;
+        const apiUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items`;
         
-        await axios.post(apiUrl, itemData, {
+        const response = await axios.post(apiUrl, itemData, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
@@ -221,22 +263,24 @@ async function createSharePointListItem(accessToken, siteUrl, listId, itemData, 
             }
         });
 
-        context.log('Created SharePoint list item for webhook:', itemData.SubscriptionId);
+        context.log('Created SharePoint list item for webhook:', itemData.fields.SubscriptionId);
     } catch (error) {
         context.log.error('Error creating SharePoint list item:', error.response?.data || error.message);
+        context.log.error('Item data:', JSON.stringify(itemData, null, 2));
+        context.log.error('API URL:', apiUrl);
+        // Don't re-throw - let the sync continue
     }
 }
 
-async function updateSharePointListItem(accessToken, siteUrl, listId, itemId, itemData, context) {
+async function updateSharePointListItem(accessToken, sitePath, listId, itemId, itemData, context) {
     try {
-        const apiUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items(${itemId})`;
+        const apiUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}`;
         
         await axios.patch(apiUrl, itemData, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'IF-MATCH': '*'
+                'Accept': 'application/json'
             }
         });
 

@@ -118,7 +118,7 @@ async function processNotification(notification, context) {
         try {
             await updateNotificationCount(subscriptionId, context);
         } catch (updateError) {
-            context.log.error('Failed to update notification count:', updateError);
+            context.log.error('Failed to update notification count:', updateError.message);
             // Continue processing even if update fails
         }
 
@@ -143,8 +143,8 @@ async function updateNotificationCount(subscriptionId, context) {
         const clientId = process.env.AZURE_CLIENT_ID;
         const clientSecret = process.env.AZURE_CLIENT_SECRET;
         const tenantId = process.env.AZURE_TENANT_ID;
-        const siteUrl = process.env.SHAREPOINT_SITE_URL || 'https://fambrandsllc.sharepoint.com/sites/sphookmanagement';
-        const listId = process.env.WEBHOOK_LIST_ID || '30516097-c58c-478c-b87f-76c8f6ce2b56';
+        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
         
         // Get access token
         const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
@@ -162,8 +162,8 @@ async function updateNotificationCount(subscriptionId, context) {
         
         const accessToken = tokenResponse.data.access_token;
         
-        // Find the item in SharePoint list
-        const searchUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items?$filter=SubscriptionId eq '${subscriptionId}'`;
+        // Find the item in SharePoint list using Graph API
+        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields&$filter=fields/SubscriptionId eq '${subscriptionId}'`;
         const searchResponse = await axios.get(searchUrl, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -173,28 +173,36 @@ async function updateNotificationCount(subscriptionId, context) {
         
         if (searchResponse.data.value && searchResponse.data.value.length > 0) {
             const item = searchResponse.data.value[0];
-            const itemId = item.Id;
-            const currentCount = item.NotificationCount || 0;
             
-            // Update the notification count
-            const updateUrl = `${siteUrl}/_api/web/lists(guid'${listId}')/items(${itemId})`;
+            // Check if webhook is marked as deleted
+            if (item.fields.Status === 'Deleted') {
+                context.log.warn(`Received notification from deleted webhook ${subscriptionId}. Ignoring.`);
+                return;
+            }
+            
+            const itemId = item.id;
+            const currentCount = item.fields.NotificationCount || 0;
+            
+            // Update the notification count using Graph API
+            const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}`;
             await axios.patch(updateUrl, {
-                NotificationCount: currentCount + 1,
-                LastNotificationDateTime: new Date().toISOString(),
-                LastSyncDateTime: new Date().toISOString()
+                fields: {
+                    NotificationCount: currentCount + 1
+                }
             }, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'IF-MATCH': '*'
+                    'Accept': 'application/json'
                 }
             });
             
             context.log(`Updated notification count for webhook ${subscriptionId}: ${currentCount + 1}`);
+        } else {
+            context.log.warn(`Webhook ${subscriptionId} not found in SharePoint list. It may have been deleted.`);
         }
     } catch (error) {
         context.log.error('Error updating notification count:', error.message);
-        throw error;
+        // Don't throw - just log the error so notification processing can continue
     }
 }
