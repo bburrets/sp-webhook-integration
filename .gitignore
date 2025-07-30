@@ -65,9 +65,14 @@ Thumbs.db
 # Logs
 *.log
 logs/
+function-logs.zip
 
 # Temporary files
 *.tmp
 *.temp
 .tmp/
 .temp/
+
+# Backup directories
+enhanced-functions-backup/
+*-backup/
