@@ -1,16 +1,29 @@
 {
   "name": "sharepoint-webhooks",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "description": "Production-ready SharePoint webhook management and proxy solution for Azure Functions",
   "main": "src/functions/*.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "func start",
+    "deploy": "func azure functionapp publish webhook-functions-sharepoint-002",
+    "logs": "func azure functionapp logstream webhook-functions-sharepoint-002",
+    "test": "echo \"No tests configured yet\"",
+    "clean": "rm -rf node_modules package-lock.json"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": [
+    "sharepoint",
+    "webhooks",
+    "microsoft-graph",
+    "azure-functions",
+    "proxy"
+  ],
+  "author": "FAM Brands LLC",
+  "license": "Proprietary",
   "dependencies": {
     "@azure/functions": "^4.7.2-preview",
     "axios": "^1.11.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

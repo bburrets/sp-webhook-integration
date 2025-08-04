@@ -1,78 +1,39 @@
-bin
-obj
-csx
-.vs
-edge
-Publish
+# Dependencies
+node_modules/
+package-lock.json
 
-*.user
-*.suo
-*.cscfg
-*.Cache
-project.lock.json
-
-/packages
-/TestResults
-
-/tools/NuGet.exe
-/App_Data
-/secrets
-/data
-.secrets
-appsettings.json
+# Azure Functions
 local.settings.json
+bin/
+obj/
+.func/
 
-node_modules
-dist
-
-# Local python packages
-.python_packages/
-
-# Python Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Azurite artifacts
-__blobstorage__
-__queuestorage__
-__azurite_db*__.json
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Backup files
-*.backup
-*.bak
-*_backup.*
-*_old.*
-*_orig.*
+# Logs and debugging
+*.log
+*.zip
+debug-*.txt
+logs/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Logs
-*.log
-logs/
-function-logs.zip
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+test-results/
+coverage/
 
 # Temporary files
+tmp/
+temp/
 *.tmp
-*.temp
-.tmp/
-.temp/
-
-# Backup directories
-enhanced-functions-backup/
-*-backup/

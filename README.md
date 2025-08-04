@@ -1,223 +1,246 @@
 # SharePoint Webhook Solution
 
-## Overview
+A production-ready Azure Functions solution for monitoring SharePoint list changes in real-time using Microsoft Graph webhooks, with built-in proxy forwarding and centralized management.
 
-A comprehensive Azure Functions-based solution for monitoring SharePoint list changes in real-time using Microsoft Graph webhooks. The solution includes automatic synchronization to a SharePoint management list for centralized webhook tracking and monitoring.
+## 🚀 Key Features
 
-## Key Features
+- **Real-time Change Monitoring**: Instant notifications when SharePoint lists are modified
+- **Webhook Proxy**: Forward notifications to external services without validation requirements
+- **Centralized Management**: All webhooks tracked in a SharePoint management list
+- **Auto-sync**: Timer function keeps webhook status synchronized every 30 minutes
+- **Complete Visibility**: Track notification counts, forwarding URLs, and statistics
+- **Production Ready**: Proper error handling, logging, and Azure Functions v4 compatibility
 
-- **Real-time Change Monitoring**: Receive instant notifications when SharePoint lists are modified
-- **Webhook Management**: Create, list, and delete webhook subscriptions via REST API
-- **SharePoint List Integration**: Automatically sync all webhooks to a SharePoint list for easy viewing
-- **Notification Tracking**: Count and track all notifications received by each webhook
-- **Support for Lists and Document Libraries**: Monitor changes in both SharePoint Lists and Document Libraries
-- **Automatic Sync**: Timer-triggered function syncs webhooks every 30 minutes
-- **Proxy Forwarding**: Forward SharePoint notifications to external services without validation requirements
-- **Complete Visibility**: Track forwarding destinations and statistics in SharePoint management list
+## 📋 Prerequisites
 
-## Architecture
-
-```
-SharePoint Lists/Libraries → Microsoft Graph → Webhook Handler → Business Logic
-                                                     ↑
-                                              Subscription Manager
-                                                     ↓
-                                          SharePoint Management List
-```
-
-## Functions
-
-### 1. webhook-handler
-- Receives and processes SharePoint change notifications
-- Updates notification count in SharePoint management list
-- Validates webhook requests from Microsoft Graph
-
-### 2. subscription-manager
-- REST API for webhook management (GET, POST, DELETE)
-- Automatically syncs created/deleted webhooks to SharePoint
-- Handles webhook validation for Microsoft Graph
-
-### 3. webhook-sync
-- Manual sync endpoint to update SharePoint management list
-- Fetches all webhooks and updates their status
-- Marks deleted webhooks appropriately
-
-### 4. webhook-sync-timer
-- Runs every 30 minutes automatically
-- Keeps SharePoint list in sync with actual webhooks
-
-## Prerequisites
-
-- Azure subscription
+- Azure subscription with Function App (Node.js 18+)
 - SharePoint Online site with appropriate permissions
 - Azure AD App Registration with Microsoft Graph permissions:
-  - `Sites.Read.All` or `Sites.ReadWrite.All`
+  - `Sites.Read.All` or `Sites.ReadWrite.All` (Application permissions)
   - Admin consent granted
 
-## Deployment
+## 🏗️ Architecture
 
-### Azure Resources Required
-- **Function App**: Node.js 18+ on Windows/Linux
-- **Storage Account**: For Function App state
-- **Application Insights**: For monitoring (optional but recommended)
+```
+SharePoint Lists → Microsoft Graph → Webhook Handler → Proxy Forwarding → External Services
+                                           ↑
+                                    Subscription Manager
+                                           ↓
+                                 SharePoint Management List
+```
 
-### Environment Variables
-Configure these in your Function App:
+## ⚙️ Environment Variables
+
+Configure these in your Azure Function App:
 
 ```bash
 AZURE_CLIENT_ID=<your-app-registration-client-id>
 AZURE_CLIENT_SECRET=<your-app-registration-secret>
 AZURE_TENANT_ID=<your-azure-tenant-id>
-WEBHOOK_LIST_ID=<sharepoint-management-list-id>  # Default: 82a105da-8206-4bd0-851b-d3f2260043f4
+WEBHOOK_LIST_ID=82a105da-8206-4bd0-851b-d3f2260043f4  # Your management list ID
 ```
 
-### SharePoint Management List
+## 📊 SharePoint Management List Setup
+
 Create a SharePoint list with these columns:
 
 | Column Name | Type | Required | Description |
 |-------------|------|----------|-------------|
-| Title | Single line of text | Yes | Format: "{ResourceType} - {ListName}" |
-| SubscriptionId | Single line of text | Yes | Unique webhook ID |
-| Status | Choice | Yes | Values: Active, Deleted |
-| ResourceType | Choice | Yes | Values: List, Library |
-| ChangeType | Single line of text | Yes | Change types monitored |
+| Title | Single line of text | Yes | Auto-generated: "{ResourceType} - {ListName}" |
+| SubscriptionId | Single line of text | Yes | Unique webhook subscription ID |
+| Status | Choice (Active, Deleted) | Yes | Current webhook status |
+| ChangeType | Single line of text | Yes | SharePoint change types (e.g., "updated") |
 | NotificationUrl | Single line of text | Yes | Webhook endpoint URL |
-| ExpirationDateTime | Date and Time | Yes | Webhook expiration |
-| SiteUrl | Single line of text | Yes | SharePoint site URL |
-| ListId | Single line of text | Yes | SharePoint list/library ID |
-| ListName | Single line of text | Yes | Display name of list/library |
-| AutoRenew | Yes/No | Yes | Auto-renewal flag |
+| ExpirationDateTime | Date and Time | Yes | When webhook expires |
 | NotificationCount | Number | Yes | Total notifications received |
-| ClientState | Single line of text | No | Client state including proxy config |
-| ForwardingUrl | Single line of text | No | URL where notifications are forwarded |
-| IsProxy | Choice (Yes/No) | No | Whether webhook forwards notifications |
-| LastForwardedDateTime | Date and Time | No | When last notification was forwarded |
+| ClientState | Single line of text | No | Contains proxy configuration |
+| ForwardingUrl | Single line of text | No | External service URL for forwarding |
+| IsProxy | Choice (Yes, No) | No | Whether webhook forwards notifications |
+| LastForwardedDateTime | Date and Time | No | Last successful forward timestamp |
 
-## Usage
+Additional columns for tracking:
+- SiteUrl, ListId, ListName, ResourceType, AutoRenew
 
-### Create a Webhook Subscription
+## 🔧 Core Functions
 
+### 1. **webhook-handler**
+- Receives SharePoint change notifications
+- Validates requests from Microsoft Graph
+- Forwards notifications based on clientState
+- Updates notification counts and statistics
+
+### 2. **subscription-manager**  
+- REST API for webhook CRUD operations
+- Automatically syncs webhooks to SharePoint
+- Handles Graph API authentication
+
+### 3. **webhook-sync**
+- Timer-triggered (every 30 minutes)
+- Synchronizes all webhooks with SharePoint list
+- Marks deleted webhooks appropriately
+
+### 4. **check-list-columns** (Admin Tool)
+- Utility to inspect SharePoint list structure
+- Useful for debugging field issues
+
+## 📡 API Usage
+
+### Create a Standard Webhook
 ```bash
-# Standard webhook (use test-webhook-creation due to subscription-manager issues)
-curl -X POST "https://<function-app>.azurewebsites.net/api/test-webhook-creation?code=<function-key>" \
+curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/<site-id>/lists/<list-id>",
+    "resource": "sites/<site-path>/lists/<list-id>",
     "changeType": "updated",
     "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler"
   }'
+```
 
-# Proxy webhook that forwards to external service
-curl -X POST "https://<function-app>.azurewebsites.net/api/test-webhook-creation?code=<function-key>" \
+### Create a Proxy Webhook (with Forwarding)
+```bash
+curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/<site-id>/lists/<list-id>",
+    "resource": "sites/<site-path>/lists/<list-id>",
     "changeType": "updated",
     "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
-    "clientState": "forward:https://your-external-service.com/webhook"
+    "clientState": "forward:https://your-service.com/webhook"
   }'
 ```
 
-### List All Subscriptions
-
+### List All Webhooks
 ```bash
-curl "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<function-key>"
+curl "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>"
 ```
 
-### Delete a Subscription
-
+### Delete a Webhook
 ```bash
-curl -X DELETE "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<function-key>&subscriptionId=<subscription-id>"
+curl -X DELETE "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>&subscriptionId=<id>"
 ```
 
-### Manual Sync to SharePoint
+## 🔍 How Proxy Forwarding Works
 
-```bash
-curl -X POST "https://<function-app>.azurewebsites.net/api/webhook-sync?code=<function-key>"
+1. Create webhook with `clientState` starting with `forward:`
+2. SharePoint sends notification to your webhook-handler
+3. Handler validates and enriches the notification
+4. Forwards to the URL specified after `forward:`
+5. Updates SharePoint list with forwarding statistics
+
+### Forwarded Payload Structure
+```json
+{
+  "timestamp": "2024-11-27T10:30:45.123Z",
+  "source": "SharePoint-Webhook-Proxy",
+  "notification": {
+    // Original SharePoint notification
+  },
+  "metadata": {
+    "processedBy": "webhook-functions-sharepoint-002",
+    "environment": "production"
+  }
+}
 ```
 
-## Recent Updates
+## 🐛 Troubleshooting
 
-### Fixed Issues
-1. **SharePoint Field Indexing**: Resolved HTTP 500 errors when filtering by non-indexed SubscriptionId field
-2. **Variable Scoping**: Fixed resourceType variable scope in webhook-sync function
-3. **Notification Processing**: Fixed webhook-handler to properly update notification counts
-4. **ClientState Visibility**: SharePoint list now shows forwarding URLs and proxy configuration
-5. **Forwarding Statistics**: Tracks when notifications were last forwarded to external services
-
-### Implementation Details
-- All SharePoint queries now fetch items without filtering and perform filtering in memory
-- Supports both SharePoint Lists (genericList) and Document Libraries (documentLibrary)
-- Proper error handling and logging throughout
-
-## Monitoring
-
-### View Logs
+### View Real-time Logs
 ```bash
-# Real-time logs
-func azure functionapp logstream <function-app-name>
-
-# Or use Azure Portal
-Azure Portal → Function App → Log stream
+az webapp log tail --name <function-app> --resource-group <rg-name>
 ```
+
+### Common Issues
+
+1. **Authentication Errors**
+   - Verify App Registration permissions
+   - Check client secret hasn't expired
+   - Ensure admin consent is granted
+
+2. **Webhook Creation Fails**
+   - Confirm notification URL is publicly accessible
+   - Check SharePoint site permissions
+   - Verify resource path format
+
+3. **Notifications Not Updating Count**
+   - Check webhook-handler logs for errors
+   - Verify SharePoint list permissions
+   - Ensure WEBHOOK_LIST_ID is correct
+
+4. **Proxy Forwarding Not Working**
+   - Check target URL is accessible
+   - Look for 429 (rate limit) errors
+   - Verify clientState format
+
+## 🔒 Security Best Practices
+
+1. **Use Azure Key Vault** for storing secrets
+2. **Enable Managed Identity** for Function App
+3. **Implement IP restrictions** where possible
+4. **Regular secret rotation** (every 90 days)
+5. **Monitor with Application Insights**
+6. **Use function-level authentication** for all endpoints
+
+## 📈 Monitoring
 
 ### Application Insights Queries
+
 ```kusto
-// View all webhook notifications
+// Recent webhook notifications
 traces
 | where operation_Name == "webhook-handler"
 | where message contains "Processing notification"
 | order by timestamp desc
+| take 100
 
-// Check sync operations
+// Forwarding statistics
 traces
-| where operation_Name == "webhook-sync"
-| order by timestamp desc
+| where message contains "Successfully forwarded"
+| summarize count() by bin(timestamp, 1h)
 ```
 
-## Troubleshooting
+## 🚧 Limitations
 
-### Common Issues
+- Webhook subscriptions expire after maximum 180 days
+- SharePoint only supports "updated" changeType
+- Notifications don't include actual change details
+- Rate limits apply to Graph API calls
 
-1. **HTTP 500 on Deletion**
-   - Fixed: Now fetches all items and filters in memory instead of using SharePoint filtering
+## 🛠️ Development
 
-2. **Notifications Not Updating Count**
-   - Fixed: webhook-handler now properly finds and updates SharePoint items
+### Project Structure
+```
+sharepoint-webhooks/
+├── src/
+│   ├── functions/          # Azure Functions
+│   │   ├── webhook-handler.js
+│   │   ├── subscription-manager.js
+│   │   ├── webhook-sync.js
+│   │   └── check-list-columns.js
+│   └── shared/            # Shared modules
+│       ├── auth.js       # Authentication
+│       ├── graph-api.js  # Graph API operations
+│       └── sharepoint.js # SharePoint helpers
+├── host.json             # Function app config
+├── local.settings.json   # Local development config
+└── package.json          # Dependencies
+```
 
-3. **"Field cannot be referenced in filter" Error**
-   - Fixed: Removed all SharePoint field filtering, using in-memory filtering instead
+### Local Development
+```bash
+# Install dependencies
+npm install
 
-4. **No Notifications Received**
-   - Verify webhook subscription is active
-   - Check SharePoint permissions
-   - Ensure notification URL is publicly accessible
+# Set up local.settings.json with your credentials
+cp local.settings.json.example local.settings.json
 
-### Debug Functions
-The solution includes several debug utilities in the `test/debug-utils/` directory for troubleshooting.
+# Run locally
+func start
+```
 
-## Security Recommendations
-
-1. **Use Azure Key Vault** for storing client secrets
-2. **Enable Managed Identity** for the Function App
-3. **Implement IP restrictions** if webhook endpoints don't need public access
-4. **Regular secret rotation** for client credentials
-5. **Monitor access logs** in Application Insights
-
-## Limitations
-
-- SharePoint webhook subscriptions expire after maximum 6 months
-- Notifications don't include change details (requires separate API call)
-- Document Library webhooks may have slight delays compared to Lists
-
-## Contributing
-
-When making changes:
-1. Test webhook creation, deletion, and sync operations
-2. Verify SharePoint list updates correctly
-3. Check notification processing and count updates
-4. Update documentation for any new features
-
-## License
+## 📄 License
 
 This solution is provided as-is for SharePoint webhook management.
+
+---
+
+For detailed implementation notes and current state, see [CURRENT_STATE.md](CURRENT_STATE.md).
+For proxy forwarding specifics, see [WEBHOOK_PROXY_GUIDE.md](WEBHOOK_PROXY_GUIDE.md).
