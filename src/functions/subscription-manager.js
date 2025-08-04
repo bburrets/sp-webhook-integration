@@ -154,7 +154,8 @@ async function createSubscription(accessToken, subscriptionData, context) {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 30000 // 30 second timeout
             });
 
             context.log('Subscription created successfully:', response.data.id);
@@ -170,7 +171,8 @@ async function createSubscription(accessToken, subscriptionData, context) {
             } catch (syncError) {
                 context.log.error('Failed to sync to SharePoint:', syncError.message);
                 context.log.error('Sync error details:', syncError.response?.data || syncError);
-                // Continue even if sync fails
+                context.log.error('Sync error stack:', syncError.stack);
+                // Continue even if sync fails - webhook was created successfully
             }
 
             return {
