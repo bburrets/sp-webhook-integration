@@ -161,7 +161,12 @@ async function createSubscription(accessToken, subscriptionData, context) {
 
             // Sync to SharePoint list
             try {
-                await syncWebhookToSharePoint(accessToken, response.data, 'created', context);
+                // Merge the original clientState with the response data since Graph API doesn't return it
+                const webhookDataWithClientState = {
+                    ...response.data,
+                    clientState: subscription.clientState
+                };
+                await syncWebhookToSharePoint(accessToken, webhookDataWithClientState, 'created', context);
             } catch (syncError) {
                 context.log.error('Failed to sync to SharePoint:', syncError.message);
                 context.log.error('Sync error details:', syncError.response?.data || syncError);
