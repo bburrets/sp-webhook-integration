@@ -12,6 +12,8 @@ A comprehensive Azure Functions-based solution for monitoring SharePoint list ch
 - **Notification Tracking**: Count and track all notifications received by each webhook
 - **Support for Lists and Document Libraries**: Monitor changes in both SharePoint Lists and Document Libraries
 - **Automatic Sync**: Timer-triggered function syncs webhooks every 30 minutes
+- **Proxy Forwarding**: Forward SharePoint notifications to external services without validation requirements
+- **Complete Visibility**: Track forwarding destinations and statistics in SharePoint management list
 
 ## Architecture
 
@@ -86,19 +88,33 @@ Create a SharePoint list with these columns:
 | ListName | Single line of text | Yes | Display name of list/library |
 | AutoRenew | Yes/No | Yes | Auto-renewal flag |
 | NotificationCount | Number | Yes | Total notifications received |
+| ClientState | Single line of text | No | Client state including proxy config |
+| ForwardingUrl | Single line of text | No | URL where notifications are forwarded |
+| IsProxy | Choice (Yes/No) | No | Whether webhook forwards notifications |
+| LastForwardedDateTime | Date and Time | No | When last notification was forwarded |
 
 ## Usage
 
 ### Create a Webhook Subscription
 
 ```bash
-curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<function-key>" \
+# Standard webhook (use test-webhook-creation due to subscription-manager issues)
+curl -X POST "https://<function-app>.azurewebsites.net/api/test-webhook-creation?code=<function-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/<site-id>/lists/<list-id>",
+    "changeType": "updated",
+    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler"
+  }'
+
+# Proxy webhook that forwards to external service
+curl -X POST "https://<function-app>.azurewebsites.net/api/test-webhook-creation?code=<function-key>" \
   -H "Content-Type: application/json" \
   -d '{
     "resource": "sites/<site-id>/lists/<list-id>",
     "changeType": "updated",
     "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
-    "expirationDateTime": "2025-08-02T09:00:00Z"
+    "clientState": "forward:https://your-external-service.com/webhook"
   }'
 ```
 
@@ -126,6 +142,8 @@ curl -X POST "https://<function-app>.azurewebsites.net/api/webhook-sync?code=<fu
 1. **SharePoint Field Indexing**: Resolved HTTP 500 errors when filtering by non-indexed SubscriptionId field
 2. **Variable Scoping**: Fixed resourceType variable scope in webhook-sync function
 3. **Notification Processing**: Fixed webhook-handler to properly update notification counts
+4. **ClientState Visibility**: SharePoint list now shows forwarding URLs and proxy configuration
+5. **Forwarding Statistics**: Tracks when notifications were last forwarded to external services
 
 ### Implementation Details
 - All SharePoint queries now fetch items without filtering and perform filtering in memory

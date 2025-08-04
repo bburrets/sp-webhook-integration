@@ -39,11 +39,12 @@ External services receive enriched notification data:
 ```
 
 ### 3. SharePoint List Tracking
-The webhook management list tracks:
-- **ClientState**: The full clientState value
-- **ForwardingUrl**: Extracted destination URL
-- **IsProxy**: Whether this webhook forwards notifications
-- **LastForwardedDateTime**: When the last notification was forwarded
+The webhook management list now provides complete visibility:
+- **ClientState**: The full clientState value (preserved during creation)
+- **ForwardingUrl**: Extracted destination URL (automatically populated)
+- **IsProxy**: Whether this webhook forwards notifications (auto-detected)
+- **LastForwardedDateTime**: When the last notification was forwarded (auto-updated)
+- **NotificationCount**: Total notifications received and processed
 
 ## Setting Up a Proxy Webhook
 
@@ -52,7 +53,8 @@ The webhook management list tracks:
 Create a webhook with a specially formatted clientState:
 
 ```bash
-curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=YOUR_FUNCTION_KEY" \
+# Note: Use test-webhook-creation endpoint (subscription-manager has issues)
+curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/test-webhook-creation?code=YOUR_FUNCTION_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "resource": "sites/TENANT.sharepoint.com:/sites/SITE:/lists/LIST_ID",
@@ -70,7 +72,7 @@ The `clientState` must start with `forward:` followed by the destination URL.
 2. Create a webhook:
 
 ```bash
-curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=YOUR_FUNCTION_KEY" \
+curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/test-webhook-creation?code=YOUR_FUNCTION_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "resource": "sites/fambrandsllc.sharepoint.com:/sites/sphookmanagement:/lists/82a105da-8206-4bd0-851b-d3f2260043f4",
@@ -129,11 +131,15 @@ X-Original-Subscription-Id: {subscription-id}
 ## Monitoring
 
 ### SharePoint List View
-Navigate to your webhook management list to see:
-- Which webhooks are configured for forwarding
-- Where they forward to
-- When they last forwarded a notification
-- Total notification count
+Navigate to your webhook management list to see complete visibility:
+- **ClientState** - Full proxy configuration (e.g., "forward:https://webhook.site/abc")
+- **ForwardingUrl** - Extracted destination URL for easy reference
+- **IsProxy** - "Yes" for webhooks that forward notifications
+- **LastForwardedDateTime** - Timestamp of last successful forward
+- **NotificationCount** - Total notifications received
+- **Status** - Active/Deleted webhook status
+
+All fields are automatically populated and maintained by the solution.
 
 ### Function Logs
 The webhook-handler logs:
@@ -186,7 +192,9 @@ The webhook-handler logs:
 ### Webhook Not Forwarding
 1. Check the clientState starts with `forward:`
 2. Verify the webhook shows `IsProxy: Yes` in SharePoint list
-3. Check function logs for forwarding attempts
+3. Check ForwardingUrl field contains the correct destination
+4. Check function logs for forwarding attempts
+5. Verify LastForwardedDateTime to see if it's updating
 
 ### External Service Not Receiving
 1. Verify the URL is accessible from Azure
@@ -194,10 +202,13 @@ The webhook-handler logs:
 3. Ensure the service responds within 10 seconds
 4. Look for errors in the function logs
 
-### SharePoint List Not Updating
-1. Ensure the new columns exist in your SharePoint list
-2. Check function has permissions to update the list
-3. Verify the webhook appears in the list after creation
+### SharePoint List Shows Complete Information
+The solution now automatically:
+1. Preserves clientState during webhook creation
+2. Extracts and stores ForwardingUrl
+3. Sets IsProxy flag correctly
+4. Updates LastForwardedDateTime on each forward
+5. Increments NotificationCount for all notifications
 
 ## Future Enhancements
 

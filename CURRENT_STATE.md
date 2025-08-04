@@ -10,14 +10,20 @@
 3. **Webhook Creation** - Works via `test-webhook-creation` endpoint
 4. **Webhook Deletion** - Functions properly
 5. **Webhook Listing** - Can retrieve all active webhooks
-6. **SharePoint List Sync** - Tracks webhooks in SharePoint list
+6. **SharePoint List Sync** - Tracks webhooks in SharePoint list with full visibility
 7. **Proxy Forwarding** - Successfully forwards notifications to external URLs
 8. **Automatic Sync Timer** - Runs every 30 minutes to sync webhook status
+9. **Forwarding Visibility** - Shows proxy destinations in SharePoint list
+10. **Statistics Tracking** - Tracks notification counts and last forwarded time
 
 ### ❌ Known Issues:
 1. **subscription-manager POST** - Returns 500 errors when creating webhooks
-2. **ClientState Preservation** - Microsoft Graph API returns null for security, causing SharePoint list to show empty ClientState/ForwardingUrl
-3. **Webhook Limits** - SharePoint allows only 2-3 webhooks per list
+2. **Webhook Limits** - SharePoint allows only 2-3 webhooks per list
+
+### ✅ Recently Fixed:
+1. **ClientState Preservation** - Now stores original clientState in SharePoint immediately upon creation
+2. **Forwarding URL Visibility** - SharePoint list now shows where notifications are forwarded
+3. **LastForwardedDateTime** - Tracks when notifications were last forwarded
 
 ## 🔧 Technical Implementation
 
@@ -44,8 +50,9 @@ SharePoint → Microsoft Graph → Your Webhook Handler → External Service
 ### Current State:
 - ✅ Forwarding logic implemented
 - ✅ Can create proxy webhooks (via test endpoint)
-- ⚠️ SharePoint list shows ClientState/ForwardingUrl as null due to Graph API limitation
-- ✅ Forwarding still works despite null display
+- ✅ SharePoint list shows ClientState/ForwardingUrl with full visibility
+- ✅ Tracks LastForwardedDateTime for analytics
+- ✅ Complete transparency of proxy destinations
 
 ## 🐛 Recent Fixes Applied
 
@@ -53,6 +60,8 @@ SharePoint → Microsoft Graph → Your Webhook Handler → External Service
 2. **Async SharePoint Sync** - Made synchronization non-blocking
 3. **Webhook-sync Preservation** - Added logic to preserve proxy data during updates
 4. **Error Logging** - Enhanced error handling in subscription-manager
+5. **ClientState Storage** - test-webhook-creation now immediately stores clientState in SharePoint
+6. **Forwarding Stats** - webhook-handler updates LastForwardedDateTime on each forward
 
 ## 📋 Current Workarounds
 
@@ -74,8 +83,9 @@ curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/tes
 - Or create directly via Graph API and manually update SharePoint list
 
 ### For SharePoint List Tracking:
-- Manually update ClientState/ForwardingUrl fields after creation
-- Or accept that these fields show as null (forwarding still works)
+- All fields now automatically populated on webhook creation
+- ClientState, ForwardingUrl, and IsProxy fields show correct values
+- LastForwardedDateTime updates automatically when notifications are forwarded
 
 ## 🔄 Deployment Status
 
