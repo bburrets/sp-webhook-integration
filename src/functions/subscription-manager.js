@@ -160,21 +160,24 @@ async function createSubscription(accessToken, subscriptionData, context) {
 
             context.log('Subscription created successfully:', response.data.id);
 
-            // Sync to SharePoint list
-            try {
-                // Merge the original clientState with the response data since Graph API doesn't return it
-                const webhookDataWithClientState = {
-                    ...response.data,
-                    clientState: subscription.clientState
-                };
-                await syncWebhookToSharePoint(accessToken, webhookDataWithClientState, 'created', context);
-            } catch (syncError) {
-                context.log.error('Failed to sync to SharePoint:', syncError.message);
-                context.log.error('Sync error details:', syncError.response?.data || syncError);
-                context.log.error('Sync error stack:', syncError.stack);
-                // Continue even if sync fails - webhook was created successfully
-            }
+            // Sync to SharePoint list asynchronously - don't wait for it to complete
+            const webhookDataWithClientState = {
+                ...response.data,
+                clientState: subscription.clientState
+            };
+            
+            // Fire and forget - sync happens in background
+            syncWebhookToSharePoint(accessToken, webhookDataWithClientState, 'created', context)
+                .then(() => {
+                    context.log('SharePoint sync completed successfully for webhook:', response.data.id);
+                })
+                .catch((syncError) => {
+                    context.log.error('Failed to sync to SharePoint:', syncError.message);
+                    context.log.error('Sync error details:', syncError.response?.data || syncError);
+                    context.log.error('Sync error stack:', syncError.stack);
+                });
 
+            // Return immediately without waiting for sync
             return {
                 status: 201,
                 headers: {
@@ -223,13 +226,14 @@ async function deleteSubscription(accessToken, subscriptionId, context) {
 
         context.log('Subscription deleted successfully:', subscriptionId);
 
-        // Sync to SharePoint list
-        try {
-            await syncWebhookToSharePoint(accessToken, { id: subscriptionId }, 'deleted', context);
-        } catch (syncError) {
-            context.log.error('Failed to sync to SharePoint:', syncError);
-            // Continue even if sync fails
-        }
+        // Sync to SharePoint list asynchronously
+        syncWebhookToSharePoint(accessToken, { id: subscriptionId }, 'deleted', context)
+            .then(() => {
+                context.log('SharePoint sync completed successfully for deleted webhook:', subscriptionId);
+            })
+            .catch((syncError) => {
+                context.log.error('Failed to sync deletion to SharePoint:', syncError);
+            });
 
         return {
             status: 200,
