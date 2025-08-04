@@ -29,36 +29,34 @@ This solution now includes functionality to automatically sync all webhook subsc
 
 ## SharePoint List Structure
 
-The list at https://fambrandsllc.sharepoint.com/sites/sphookmanagement should have these columns:
+The list at https://fambrandsllc.sharepoint.com/sites/sphookmanagement/_layouts/15/listedit.aspx?List=%7B82a105da-8206-4bd0-851b-d3f2260043f4%7D has these columns:
 
-| Column Name | Type | Description |
-|-------------|------|-------------|
-| Title | Single line of text | Resource name |
-| SubscriptionId | Single line of text | Unique webhook ID |
-| Resource | Single line of text | SharePoint resource path |
-| ChangeType | Single line of text | Types of changes monitored |
-| NotificationUrl | Single line of text | Webhook endpoint URL |
-| ExpirationDateTime | Date and Time | When webhook expires |
-| ClientState | Single line of text | Client state value |
-| ApplicationId | Single line of text | App that created webhook |
-| CreatorId | Single line of text | User who created webhook |
-| Status | Single line of text | Active/Deleted |
-| CreatedDateTime | Date and Time | When created |
-| DeletedDateTime | Date and Time | When deleted |
-| LastSyncDateTime | Date and Time | Last sync time |
-| NotificationCount | Number | Total notifications received |
-| LastNotificationDateTime | Date and Time | Last notification time |
+| Column Name | Type | Description | Notes |
+|-------------|------|-------------|-------|
+| Title | Single line of text | Format: "{ResourceType} - {ListName}" | Auto-generated |
+| SubscriptionId | Single line of text | Unique webhook ID | **Not indexed - cannot filter** |
+| Status | Choice | Active/Deleted | Values: Active, Deleted |
+| ResourceType | Choice | List or Library | Values: List, Library |
+| ChangeType | Single line of text | Types of changes monitored | Usually "updated" |
+| NotificationUrl | Single line of text | Webhook endpoint URL | Your function URL |
+| ExpirationDateTime | Date and Time | When webhook expires | Max 6 months |
+| SiteUrl | Single line of text | SharePoint site URL | Full site path |
+| ListId | Single line of text | SharePoint list/library ID | GUID |
+| ListName | Single line of text | Display name of list/library | Human-readable name |
+| AutoRenew | Yes/No | Auto-renewal flag | Currently always true |
+| NotificationCount | Number | Total notifications received | Increments on each notification |
+
+**Important**: The SubscriptionId field is not indexed in SharePoint, so all queries fetch all items and filter in memory to avoid errors.
 
 ## Configuration
 
-Add these to your environment variables:
+The webhook management list ID is configured via environment variable:
 
-```json
-{
-  "SHAREPOINT_SITE_URL": "https://fambrandsllc.sharepoint.com/sites/sphookmanagement",
-  "WEBHOOK_LIST_ID": "30516097-c58c-478c-b87f-76c8f6ce2b56"
-}
 ```
+WEBHOOK_LIST_ID=82a105da-8206-4bd0-851b-d3f2260043f4
+```
+
+This is the SharePoint list where all webhook information is synchronized for viewing.
 
 ## Usage
 

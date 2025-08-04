@@ -267,27 +267,9 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 siteUrl = parts[0];
                 listIdValue = parts[1];
                 
-                // Try to get the actual list name and type from Graph API
+                // Simplified - no extra API call
                 let resourceType = 'List'; // Default
-                try {
-                    const sitePathForList = siteUrl.replace('sites/', '');
-                    const listUrl = `https://graph.microsoft.com/v1.0/sites/${sitePathForList}/lists/${listIdValue}`;
-                    const listResponse = await axios.get(listUrl, {
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`,
-                            'Accept': 'application/json'
-                        }
-                    });
-                    listName = listResponse.data.displayName || listResponse.data.name || `List ${listIdValue}`;
-                    
-                    // Determine if it's a Document Library
-                    if (listResponse.data.list && listResponse.data.list.template === 'documentLibrary') {
-                        resourceType = 'Library';
-                    }
-                } catch (listError) {
-                    context.log.warn(`Could not fetch list details for ${listIdValue}:`, listError.message);
-                    listName = `List ${listIdValue}`;
-                }
+                listName = `List`; // Simplified name
             }
             
             // Check if this is a proxy webhook
