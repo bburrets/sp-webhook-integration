@@ -1,6 +1,70 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
 
+async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
+    try {
+        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
+        
+        if (action === 'created') {
+            // Extract site and list info from resource
+            let listName = 'Unknown List';
+            let siteUrl = '';
+            let listIdValue = '';
+            let resourceType = 'List';
+            
+            if (webhook.resource) {
+                const parts = webhook.resource.split('/lists/');
+                siteUrl = parts[0];
+                listIdValue = parts[1];
+            }
+            
+            // Check if this is a proxy webhook
+            let isProxy = 'No';
+            let forwardingUrl = '';
+            if (webhook.clientState && webhook.clientState.startsWith('forward:')) {
+                isProxy = 'Yes';
+                forwardingUrl = webhook.clientState.substring(8);
+            }
+            
+            // Add webhook to SharePoint list
+            const itemData = {
+                fields: {
+                    Title: `${resourceType} - ${listName}`,
+                    SubscriptionId: webhook.id,
+                    ChangeType: webhook.changeType,
+                    NotificationUrl: webhook.notificationUrl,
+                    ExpirationDateTime: webhook.expirationDateTime,
+                    Status: 'Active',
+                    SiteUrl: siteUrl,
+                    ListId: listIdValue,
+                    ListName: listName,
+                    ResourceType: resourceType,
+                    AutoRenew: true,
+                    NotificationCount: 0,
+                    ClientState: webhook.clientState || '',
+                    ForwardingUrl: forwardingUrl,
+                    IsProxy: isProxy
+                }
+            };
+            
+            const apiUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items`;
+            await axios.post(apiUrl, itemData, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            context.log('Webhook synced to SharePoint list with preserved clientState:', webhook.id);
+        }
+    } catch (error) {
+        context.log.error('Error syncing to SharePoint:', error.response?.data || error.message);
+        throw error;
+    }
+}
+
 app.http('test-webhook-creation', {
     methods: ['POST'],
     authLevel: 'function',
@@ -53,6 +117,17 @@ app.http('test-webhook-creation', {
             });
             
             context.log('Graph API response:', JSON.stringify(response.data, null, 2));
+            
+            // Sync to SharePoint with clientState preserved
+            try {
+                await syncWebhookToSharePoint(accessToken, {
+                    ...response.data,
+                    clientState: subscription.clientState // Preserve the original clientState
+                }, 'created', context);
+                context.log('Successfully synced webhook to SharePoint with clientState');
+            } catch (syncError) {
+                context.log.error('Failed to sync to SharePoint:', syncError.message);
+            }
             
             return {
                 status: 200,

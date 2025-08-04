@@ -122,6 +122,8 @@ async function processNotification(notification, context) {
             
             try {
                 await forwardNotification(notification, forwardingUrl, context);
+                // Update forwarding statistics
+                await updateForwardingStats(subscriptionId, context);
             } catch (forwardError) {
                 context.log.error('Failed to forward notification:', forwardError.message);
                 // Continue processing even if forwarding fails
@@ -148,6 +150,69 @@ async function processNotification(notification, context) {
     } catch (error) {
         context.log.error('Error processing individual notification:', error);
         throw error;
+    }
+}
+
+async function updateForwardingStats(subscriptionId, context) {
+    try {
+        // Get access token
+        const clientId = process.env.AZURE_CLIENT_ID;
+        const clientSecret = process.env.AZURE_CLIENT_SECRET;
+        const tenantId = process.env.AZURE_TENANT_ID;
+        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
+        
+        // Get access token
+        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+        const tokenParams = new URLSearchParams();
+        tokenParams.append('client_id', clientId);
+        tokenParams.append('client_secret', clientSecret);
+        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
+        tokenParams.append('grant_type', 'client_credentials');
+
+        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+        
+        const accessToken = tokenResponse.data.access_token;
+        
+        // Get all items from SharePoint list
+        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
+        const searchResponse = await axios.get(searchUrl, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        // Find the matching item
+        const matchingItem = searchResponse.data.value?.find(item => 
+            item.fields && item.fields.SubscriptionId === subscriptionId
+        );
+        
+        if (matchingItem) {
+            const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${matchingItem.id}`;
+            
+            // Update LastForwardedDateTime
+            await axios.patch(updateUrl, {
+                fields: {
+                    LastForwardedDateTime: new Date().toISOString()
+                }
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            context.log(`Updated forwarding stats for webhook ${subscriptionId}`);
+        }
+    } catch (error) {
+        context.log.error('Error updating forwarding stats:', error.message);
+        // Don't throw - just log the error so notification processing can continue
     }
 }
 
