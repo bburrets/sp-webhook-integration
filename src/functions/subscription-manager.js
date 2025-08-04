@@ -51,8 +51,8 @@ app.http('subscription-manager', {
             }
 
         } catch (error) {
-            context.log.error('Error in subscription manager:', error);
-            context.log.error('Error stack:', error.stack);
+            context.error('Error in subscription manager:', error);
+            context.error('Error stack:', error.stack);
             return {
                 status: 500,
                 body: JSON.stringify({
@@ -85,7 +85,7 @@ async function getAccessToken(clientId, clientSecret, tenantId, context) {
         return tokenResponse.data.access_token;
 
     } catch (error) {
-        context.log.error('Error getting access token:', error.response?.data || error.message);
+        context.error('Error getting access token:', error.response?.data || error.message);
         throw new Error('Failed to obtain access token');
     }
 }
@@ -113,7 +113,7 @@ async function listSubscriptions(accessToken, context) {
         };
 
     } catch (error) {
-        context.log.error('Error listing subscriptions:', error.response?.data || error.message);
+        context.error('Error listing subscriptions:', error.response?.data || error.message);
         return {
             status: error.response?.status || 500,
             body: JSON.stringify({
@@ -174,9 +174,9 @@ async function createSubscription(accessToken, subscriptionData, context) {
                     context.log('SharePoint sync completed successfully for webhook:', response.data.id);
                 })
                 .catch((syncError) => {
-                    context.log.error('Failed to sync to SharePoint:', syncError.message);
-                    context.log.error('Sync error details:', syncError.response?.data || syncError);
-                    context.log.error('Sync error stack:', syncError.stack);
+                    context.error('Failed to sync to SharePoint:', syncError.message);
+                    context.error('Sync error details:', syncError.response?.data || syncError);
+                    context.error('Sync error stack:', syncError.stack);
                 });
 
             // Return immediately without waiting for sync
@@ -189,23 +189,23 @@ async function createSubscription(accessToken, subscriptionData, context) {
             };
         } catch (axiosError) {
             // Log the full axios error
-            context.log.error('Axios Error Details:');
-            context.log.error('Status:', axiosError.response?.status);
-            context.log.error('Status Text:', axiosError.response?.statusText);
-            context.log.error('Headers:', JSON.stringify(axiosError.response?.headers, null, 2));
-            context.log.error('Data:', JSON.stringify(axiosError.response?.data, null, 2));
-            context.log.error('Config URL:', axiosError.config?.url);
-            context.log.error('Config Method:', axiosError.config?.method);
-            context.log.error('Config Headers:', JSON.stringify(axiosError.config?.headers, null, 2));
+            context.error('Axios Error Details:');
+            context.error('Status:', axiosError.response?.status);
+            context.error('Status Text:', axiosError.response?.statusText);
+            context.error('Headers:', JSON.stringify(axiosError.response?.headers, null, 2));
+            context.error('Data:', JSON.stringify(axiosError.response?.data, null, 2));
+            context.error('Config URL:', axiosError.config?.url);
+            context.error('Config Method:', axiosError.config?.method);
+            context.error('Config Headers:', JSON.stringify(axiosError.config?.headers, null, 2));
             
             throw axiosError; // Re-throw to be caught by outer catch
         }
 
     } catch (error) {
-        context.log.error('Final error handler - Error message:', error.message);
-        context.log.error('Final error handler - Error stack:', error.stack);
+        context.error('Final error handler - Error message:', error.message);
+        context.error('Final error handler - Error stack:', error.stack);
         if (error.response) {
-            context.log.error('Final error handler - Response data:', JSON.stringify(error.response.data, null, 2));
+            context.error('Final error handler - Response data:', JSON.stringify(error.response.data, null, 2));
         }
         
         return {
@@ -237,7 +237,7 @@ async function deleteSubscription(accessToken, subscriptionId, context) {
                 context.log('SharePoint sync completed successfully for deleted webhook:', subscriptionId);
             })
             .catch((syncError) => {
-                context.log.error('Failed to sync deletion to SharePoint:', syncError);
+                context.error('Failed to sync deletion to SharePoint:', syncError);
             });
 
         return {
@@ -249,7 +249,7 @@ async function deleteSubscription(accessToken, subscriptionId, context) {
         };
 
     } catch (error) {
-        context.log.error('Error deleting subscription:', error.response?.data || error.message);
+        context.error('Error deleting subscription:', error.response?.data || error.message);
         return {
             status: error.response?.status || 500,
             body: JSON.stringify({
@@ -276,9 +276,18 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 siteUrl = parts[0];
                 listIdValue = parts[1];
                 
-                // Simplified - no extra API call
-                let resourceType = 'List'; // Default
-                listName = `List`; // Simplified name
+                // Map known list IDs to names
+                if (listIdValue === '30516097-c58c-478c-b87f-76c8f6ce2b56') {
+                    listName = 'testList';
+                } else if (listIdValue === '82a105da-8206-4bd0-851b-d3f2260043f4') {
+                    listName = 'Webhook Management';
+                }
+            }
+            
+            // Determine resource type
+            let resourceType = 'List';
+            if (webhook.resource && webhook.resource.includes('sites/')) {
+                resourceType = 'List';
             }
             
             // Check if this is a proxy webhook
@@ -358,7 +367,7 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
             }
         }
     } catch (error) {
-        context.log.error('Error syncing to SharePoint:', error.response?.data || error.message);
+        context.error('Error syncing to SharePoint:', error.response?.data || error.message);
         throw error;
     }
 }

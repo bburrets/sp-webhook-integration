@@ -49,7 +49,7 @@ app.http('webhook-handler', {
                 try {
                     notifications = JSON.parse(requestBody);
                 } catch (parseError) {
-                    context.log.error('Failed to parse request body:', parseError);
+                    context.error('Failed to parse request body:', parseError);
                     return {
                         status: 400,
                         body: 'Invalid JSON in request body'
@@ -67,7 +67,7 @@ app.http('webhook-handler', {
                         body: 'Notifications processed successfully'
                     };
                 } else {
-                    context.log.error('Invalid notification format:', notifications);
+                    context.error('Invalid notification format:', notifications);
                     return {
                         status: 400,
                         body: 'Invalid notification format'
@@ -81,10 +81,20 @@ app.http('webhook-handler', {
             };
 
         } catch (error) {
-            context.log.error('Error processing webhook:', error);
+            context.error('Error processing webhook:', error);
+            context.error('Error stack:', error.stack);
+            context.error('Error details:', {
+                message: error.message,
+                name: error.name,
+                code: error.code
+            });
             return {
                 status: 500,
-                body: 'Internal server error'
+                body: JSON.stringify({
+                    error: 'Internal server error',
+                    message: error.message,
+                    details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+                })
             };
         }
     }
@@ -122,20 +132,24 @@ async function processNotification(notification, context) {
             
             try {
                 await forwardNotification(notification, forwardingUrl, context);
-                // Update forwarding statistics
-                await updateForwardingStats(subscriptionId, context);
+                // Update forwarding statistics in background
+                updateForwardingStats(subscriptionId, context).catch(err => 
+                    context.error('Background forwarding stats update failed:', err.message)
+                );
             } catch (forwardError) {
-                context.log.error('Failed to forward notification:', forwardError.message);
+                context.error('Failed to forward notification:', forwardError.message);
                 // Continue processing even if forwarding fails
             }
         }
 
         // Update notification count in SharePoint list
         try {
-            await updateNotificationCount(subscriptionId, context);
+            // Run in background - don't await
+            updateNotificationCount(subscriptionId, context).catch(err => 
+                context.error('Background update failed:', err.message)
+            );
         } catch (updateError) {
-            context.log.error('Failed to update notification count:', updateError.message);
-            // Continue processing even if update fails
+            context.error('Failed to start notification count update:', updateError.message);
         }
 
         // Here you can add your business logic to handle the changes
@@ -148,7 +162,9 @@ async function processNotification(notification, context) {
         context.log('Notification processed successfully');
 
     } catch (error) {
-        context.log.error('Error processing individual notification:', error);
+        context.error('Error processing individual notification:', error);
+        context.error('Notification error stack:', error.stack);
+        context.error('Failed notification:', JSON.stringify(notification, null, 2));
         throw error;
     }
 }
@@ -161,6 +177,11 @@ async function updateForwardingStats(subscriptionId, context) {
         const tenantId = process.env.AZURE_TENANT_ID;
         const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
         const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
+        
+        if (!clientId || !clientSecret || !tenantId) {
+            context.log.warn('Missing Azure credentials for SharePoint update');
+            return;
+        }
         
         // Get access token
         const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
@@ -211,7 +232,7 @@ async function updateForwardingStats(subscriptionId, context) {
             context.log(`Updated forwarding stats for webhook ${subscriptionId}`);
         }
     } catch (error) {
-        context.log.error('Error updating forwarding stats:', error.message);
+        context.error('Error updating forwarding stats:', error.message);
         // Don't throw - just log the error so notification processing can continue
     }
 }
@@ -224,6 +245,11 @@ async function updateNotificationCount(subscriptionId, context) {
         const tenantId = process.env.AZURE_TENANT_ID;
         const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
         const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
+        
+        if (!clientId || !clientSecret || !tenantId) {
+            context.warn('Missing Azure credentials for notification count update');
+            return;
+        }
         
         // Get access token
         const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
@@ -251,6 +277,9 @@ async function updateNotificationCount(subscriptionId, context) {
             }
         });
         
+        // Log the search results for debugging
+        context.log(`Found ${searchResponse.data.value?.length || 0} items in SharePoint list`);
+        
         // Find the item with matching SubscriptionId
         const matchingItem = searchResponse.data.value?.find(item => 
             item.fields && item.fields.SubscriptionId === subscriptionId
@@ -261,7 +290,7 @@ async function updateNotificationCount(subscriptionId, context) {
             
             // Check if webhook is marked as deleted
             if (item.fields.Status === 'Deleted') {
-                context.log.warn(`Received notification from deleted webhook ${subscriptionId}. Ignoring.`);
+                context.warn(`Received notification from deleted webhook ${subscriptionId}. Ignoring.`);
                 return;
             }
             
@@ -284,10 +313,10 @@ async function updateNotificationCount(subscriptionId, context) {
             
             context.log(`Updated notification count for webhook ${subscriptionId}: ${currentCount + 1}`);
         } else {
-            context.log.warn(`Webhook ${subscriptionId} not found in SharePoint list. It may have been deleted.`);
+            context.warn(`Webhook ${subscriptionId} not found in SharePoint list. It may have been deleted.`);
         }
     } catch (error) {
-        context.log.error('Error updating notification count:', error.message);
+        context.error('Error updating notification count:', error.message);
         // Don't throw - just log the error so notification processing can continue
     }
 }
@@ -336,12 +365,9 @@ async function forwardNotification(notification, forwardingUrl, context) {
             subscriptionId: notification.subscriptionId
         });
 
-        // Update LastForwardedDateTime in SharePoint list
-        await updateLastForwardedTime(notification.subscriptionId, context);
-
         return response;
     } catch (error) {
-        context.log.error('Error forwarding notification:', {
+        context.error('Error forwarding notification:', {
             url: forwardingUrl,
             error: error.message,
             subscriptionId: notification.subscriptionId
@@ -350,65 +376,3 @@ async function forwardNotification(notification, forwardingUrl, context) {
     }
 }
 
-async function updateLastForwardedTime(subscriptionId, context) {
-    try {
-        // Get access token
-        const clientId = process.env.AZURE_CLIENT_ID;
-        const clientSecret = process.env.AZURE_CLIENT_SECRET;
-        const tenantId = process.env.AZURE_TENANT_ID;
-        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
-        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
-        
-        // Get access token
-        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-        const tokenParams = new URLSearchParams();
-        tokenParams.append('client_id', clientId);
-        tokenParams.append('client_secret', clientSecret);
-        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-        tokenParams.append('grant_type', 'client_credentials');
-
-        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-        
-        const accessToken = tokenResponse.data.access_token;
-        
-        // Find the webhook item
-        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields&$top=1000`;
-        const searchResponse = await axios.get(searchUrl, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Accept': 'application/json'
-            }
-        });
-        
-        const item = searchResponse.data.value?.find(item => 
-            item.fields && item.fields.SubscriptionId === subscriptionId
-        );
-        
-        if (item) {
-            const itemId = item.id;
-            
-            // Update the LastForwardedDateTime
-            const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}`;
-            await axios.patch(updateUrl, {
-                fields: {
-                    LastForwardedDateTime: new Date().toISOString()
-                }
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                }
-            });
-            
-            context.log(`Updated last forwarded time for webhook ${subscriptionId}`);
-        }
-    } catch (error) {
-        context.log.error('Error updating last forwarded time:', error.message);
-        // Don't throw - just log the error
-    }
-}
