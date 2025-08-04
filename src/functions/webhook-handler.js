@@ -104,6 +104,7 @@ async function processNotification(notification, context) {
         const resource = notification.resource;
         const changeType = notification.changeType;
         const resourceData = notification.resourceData;
+        const clientState = notification.clientState;
 
         // Log the change details
         context.log('SharePoint change detected:', {
@@ -113,6 +114,19 @@ async function processNotification(notification, context) {
             webId: resourceData?.webId,
             listId: resourceData?.listId
         });
+
+        // Check if this notification should be forwarded
+        if (clientState && clientState.startsWith('forward:')) {
+            const forwardingUrl = clientState.substring(8);
+            context.log(`Forwarding notification to: ${forwardingUrl}`);
+            
+            try {
+                await forwardNotification(notification, forwardingUrl, context);
+            } catch (forwardError) {
+                context.log.error('Failed to forward notification:', forwardError.message);
+                // Continue processing even if forwarding fails
+            }
+        }
 
         // Update notification count in SharePoint list
         try {
@@ -210,5 +224,126 @@ async function updateNotificationCount(subscriptionId, context) {
     } catch (error) {
         context.log.error('Error updating notification count:', error.message);
         // Don't throw - just log the error so notification processing can continue
+    }
+}
+
+async function forwardNotification(notification, forwardingUrl, context) {
+    try {
+        // Prepare the payload with enriched data
+        const enrichedPayload = {
+            timestamp: new Date().toISOString(),
+            source: 'SharePoint-Webhook-Proxy',
+            notification: notification,
+            metadata: {
+                processedBy: 'webhook-functions-sharepoint-002',
+                environment: process.env.ENVIRONMENT || 'production'
+            }
+        };
+
+        // Optional: Add more enrichment based on environment variables
+        if (process.env.INCLUDE_ENRICHED_DATA === 'true') {
+            try {
+                // You could add logic here to fetch additional data from SharePoint
+                // For now, we'll just include what we have
+                enrichedPayload.enrichedData = {
+                    resourcePath: notification.resource,
+                    changeType: notification.changeType,
+                    subscriptionId: notification.subscriptionId
+                };
+            } catch (enrichError) {
+                context.log.warn('Failed to enrich data:', enrichError.message);
+            }
+        }
+
+        // Forward the notification
+        const response = await axios.post(forwardingUrl, enrichedPayload, {
+            timeout: 10000, // 10 second timeout
+            headers: {
+                'Content-Type': 'application/json',
+                'X-SharePoint-Webhook-Proxy': 'true',
+                'X-Original-Subscription-Id': notification.subscriptionId
+            }
+        });
+
+        context.log('Successfully forwarded notification:', {
+            url: forwardingUrl,
+            status: response.status,
+            subscriptionId: notification.subscriptionId
+        });
+
+        // Update LastForwardedDateTime in SharePoint list
+        await updateLastForwardedTime(notification.subscriptionId, context);
+
+        return response;
+    } catch (error) {
+        context.log.error('Error forwarding notification:', {
+            url: forwardingUrl,
+            error: error.message,
+            subscriptionId: notification.subscriptionId
+        });
+        throw error;
+    }
+}
+
+async function updateLastForwardedTime(subscriptionId, context) {
+    try {
+        // Get access token
+        const clientId = process.env.AZURE_CLIENT_ID;
+        const clientSecret = process.env.AZURE_CLIENT_SECRET;
+        const tenantId = process.env.AZURE_TENANT_ID;
+        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
+        
+        // Get access token
+        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+        const tokenParams = new URLSearchParams();
+        tokenParams.append('client_id', clientId);
+        tokenParams.append('client_secret', clientSecret);
+        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
+        tokenParams.append('grant_type', 'client_credentials');
+
+        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+        
+        const accessToken = tokenResponse.data.access_token;
+        
+        // Find the webhook item
+        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields&$top=1000`;
+        const searchResponse = await axios.get(searchUrl, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        const item = searchResponse.data.value?.find(item => 
+            item.fields && item.fields.SubscriptionId === subscriptionId
+        );
+        
+        if (item) {
+            const itemId = item.id;
+            
+            // Update the LastForwardedDateTime
+            const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}`;
+            await axios.patch(updateUrl, {
+                fields: {
+                    LastForwardedDateTime: new Date().toISOString()
+                }
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            context.log(`Updated last forwarded time for webhook ${subscriptionId}`);
+        }
+    } catch (error) {
+        context.log.error('Error updating last forwarded time:', error.message);
+        // Don't throw - just log the error
     }
 }

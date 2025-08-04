@@ -184,6 +184,14 @@ async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context
                 }
             }
             
+            // Check if this is a proxy webhook
+            let isProxy = 'No';
+            let forwardingUrl = '';
+            if (webhook.clientState && webhook.clientState.startsWith('forward:')) {
+                isProxy = 'Yes';
+                forwardingUrl = webhook.clientState.substring(8);
+            }
+            
             const itemData = {
                 fields: {
                     Title: `${resourceType} - ${listName}`,
@@ -197,7 +205,11 @@ async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context
                     ListName: listName,
                     ResourceType: resourceType,
                     AutoRenew: true,
-                    NotificationCount: existingItem ? existingItem.fields.NotificationCount || 0 : 0
+                    NotificationCount: existingItem ? existingItem.fields.NotificationCount || 0 : 0,
+                    ClientState: webhook.clientState || '',
+                    ForwardingUrl: forwardingUrl,
+                    IsProxy: isProxy,
+                    LastForwardedDateTime: existingItem ? existingItem.fields.LastForwardedDateTime || null : null
                 }
             };
 

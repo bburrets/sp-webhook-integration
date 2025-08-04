@@ -283,6 +283,14 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 }
             }
             
+            // Check if this is a proxy webhook
+            let isProxy = 'No';
+            let forwardingUrl = '';
+            if (webhook.clientState && webhook.clientState.startsWith('forward:')) {
+                isProxy = 'Yes';
+                forwardingUrl = webhook.clientState.substring(8);
+            }
+            
             // Add webhook to SharePoint list using Graph API
             const itemData = {
                 fields: {
@@ -297,7 +305,10 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                     ListName: listName,
                     ResourceType: resourceType,
                     AutoRenew: true,
-                    NotificationCount: 0
+                    NotificationCount: 0,
+                    ClientState: webhook.clientState || '',
+                    ForwardingUrl: forwardingUrl,
+                    IsProxy: isProxy
                 }
             };
             
