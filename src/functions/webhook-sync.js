@@ -215,6 +215,13 @@ async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context
 
             try {
                 if (existingItem) {
+                    // Preserve existing ClientState and ForwardingUrl if they exist
+                    if (existingItem.fields.ClientState && existingItem.fields.ClientState.startsWith('forward:')) {
+                        itemData.fields.ClientState = existingItem.fields.ClientState;
+                        itemData.fields.ForwardingUrl = existingItem.fields.ForwardingUrl;
+                        itemData.fields.IsProxy = existingItem.fields.IsProxy;
+                    }
+                    
                     // Update existing item
                     await updateSharePointListItem(accessToken, sitePath, listId, existingItem.id, itemData, context);
                     results.updated++;
