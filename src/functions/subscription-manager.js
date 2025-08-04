@@ -52,11 +52,13 @@ app.http('subscription-manager', {
 
         } catch (error) {
             context.log.error('Error in subscription manager:', error);
+            context.log.error('Error stack:', error.stack);
             return {
                 status: 500,
                 body: JSON.stringify({
                     error: 'Internal server error',
-                    details: error.message
+                    details: error.message,
+                    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
                 })
             };
         }
@@ -201,7 +203,10 @@ async function createSubscription(accessToken, subscriptionData, context) {
 
     } catch (error) {
         context.log.error('Final error handler - Error message:', error.message);
-        context.log.error('Final error handler - Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+        context.log.error('Final error handler - Error stack:', error.stack);
+        if (error.response) {
+            context.log.error('Final error handler - Response data:', JSON.stringify(error.response.data, null, 2));
+        }
         
         return {
             status: error.response?.status || 500,
