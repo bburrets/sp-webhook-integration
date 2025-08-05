@@ -197,12 +197,22 @@ traces
 | summarize count() by bin(timestamp, 1h)
 ```
 
-## 🚧 Limitations
+## 🚧 Limitations & Solutions
 
+### SharePoint Webhook Limitations:
 - Webhook subscriptions expire after maximum 180 days
 - SharePoint only supports "updated" changeType
-- Notifications don't include actual change details
+- **Notifications don't include item IDs or change details**
 - Rate limits apply to Graph API calls
+
+### Change Detection Solution:
+Since SharePoint doesn't tell us which item changed, we use **Delta Query**:
+1. When webhook fires, query for all recent changes
+2. Filter to items modified in last 5 minutes
+3. Compare with stored states to detect field changes
+4. Forward enriched notifications with actual change details
+
+Enable with: `clientState: "forward:https://your-url;detectChanges:true"`
 
 ## 🛠️ Development
 

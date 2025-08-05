@@ -100,8 +100,33 @@ app.http('webhook-handler', {
     }
 });
 
+// Track recent notifications to prevent loops
+const recentNotifications = new Map();
+const LOOP_PREVENTION_WINDOW = 10000; // 10 seconds
+
 async function processNotification(notification, context) {
     try {
+        // Create notification key for loop detection
+        const notificationKey = `${notification.subscriptionId}-${notification.resource}`;
+        const now = Date.now();
+        
+        // Check if we've seen this notification recently
+        const lastSeen = recentNotifications.get(notificationKey);
+        if (lastSeen && (now - lastSeen) < LOOP_PREVENTION_WINDOW) {
+            context.log('Duplicate notification detected, skipping to prevent loop');
+            return;
+        }
+        
+        // Record this notification
+        recentNotifications.set(notificationKey, now);
+        
+        // Clean up old entries
+        for (const [key, timestamp] of recentNotifications.entries()) {
+            if (now - timestamp > LOOP_PREVENTION_WINDOW * 2) {
+                recentNotifications.delete(key);
+            }
+        }
+        
         context.log('Processing notification:', {
             subscriptionId: notification.subscriptionId,
             resource: notification.resource,
@@ -115,6 +140,14 @@ async function processNotification(notification, context) {
         const changeType = notification.changeType;
         const resourceData = notification.resourceData;
         const clientState = notification.clientState;
+        
+        // Skip processing if this is our own webhook handler being notified
+        if (process.env.SKIP_SELF_NOTIFICATIONS === 'true' && 
+            notification.notificationUrl && 
+            notification.notificationUrl.includes('webhook-handler')) {
+            context.log('Skipping self-notification to prevent loops');
+            return;
+        }
 
         // Log the change details
         context.log('SharePoint change detected:', {
@@ -127,11 +160,34 @@ async function processNotification(notification, context) {
 
         // Check if this notification should be forwarded
         if (clientState && clientState.startsWith('forward:')) {
-            const forwardingUrl = clientState.substring(8);
+            // Parse clientState for options (format: "forward:url;detectChanges:true;fields:Title,Status")
+            const options = parseClientState(clientState);
+            const forwardingUrl = options.forwardUrl;
             context.log(`Forwarding notification to: ${forwardingUrl}`);
             
+            // Prepare enriched payload
+            let enrichedPayload = {
+                timestamp: new Date().toISOString(),
+                source: 'SharePoint-Webhook-Proxy',
+                notification: notification,
+                metadata: {
+                    processedBy: process.env.WEBSITE_HOSTNAME || 'webhook-handler',
+                    environment: process.env.AZURE_FUNCTIONS_ENVIRONMENT || 'production'
+                }
+            };
+            
+            // Add notification about change detection limitation
+            if (options.detectChanges) {
+                enrichedPayload.changeDetection = {
+                    enabled: true,
+                    limitation: "SharePoint webhooks don't include item IDs",
+                    suggestion: "Consider using a separate endpoint to query recent changes",
+                    deltaQueryEndpoint: `/api/get-recent-changes?listId=${notification.resource.split('/')[4]}`
+                };
+            }
+            
             try {
-                await forwardNotification(notification, forwardingUrl, context);
+                await forwardNotification(enrichedPayload, forwardingUrl, context);
                 // Update forwarding statistics in background
                 updateForwardingStats(subscriptionId, context).catch(err => 
                     context.error('Background forwarding stats update failed:', err.message)
@@ -323,8 +379,8 @@ async function updateNotificationCount(subscriptionId, context) {
 
 async function forwardNotification(notification, forwardingUrl, context) {
     try {
-        // Prepare the payload with enriched data
-        const enrichedPayload = {
+        // If notification is already enriched, use it as-is
+        const payload = notification.source ? notification : {
             timestamp: new Date().toISOString(),
             source: 'SharePoint-Webhook-Proxy',
             notification: notification,
@@ -334,28 +390,14 @@ async function forwardNotification(notification, forwardingUrl, context) {
             }
         };
 
-        // Optional: Add more enrichment based on environment variables
-        if (process.env.INCLUDE_ENRICHED_DATA === 'true') {
-            try {
-                // You could add logic here to fetch additional data from SharePoint
-                // For now, we'll just include what we have
-                enrichedPayload.enrichedData = {
-                    resourcePath: notification.resource,
-                    changeType: notification.changeType,
-                    subscriptionId: notification.subscriptionId
-                };
-            } catch (enrichError) {
-                context.log.warn('Failed to enrich data:', enrichError.message);
-            }
-        }
 
         // Forward the notification
-        const response = await axios.post(forwardingUrl, enrichedPayload, {
+        const response = await axios.post(forwardingUrl, payload, {
             timeout: 10000, // 10 second timeout
             headers: {
                 'Content-Type': 'application/json',
                 'X-SharePoint-Webhook-Proxy': 'true',
-                'X-Original-Subscription-Id': notification.subscriptionId
+                'X-Original-Subscription-Id': notification.subscriptionId || notification.notification?.subscriptionId
             }
         });
 
@@ -370,9 +412,42 @@ async function forwardNotification(notification, forwardingUrl, context) {
         context.error('Error forwarding notification:', {
             url: forwardingUrl,
             error: error.message,
-            subscriptionId: notification.subscriptionId
+            subscriptionId: notification.subscriptionId || notification.notification?.subscriptionId
         });
         throw error;
     }
 }
+
+// Parse clientState to extract options
+function parseClientState(clientState) {
+    const options = {
+        forwardUrl: '',
+        detectChanges: false,
+        fields: []
+    };
+    
+    // Parse format: "forward:url;detectChanges:true;fields:Title,Status"
+    // Handle URLs with colons by splitting only on first occurrence
+    const parts = clientState.split(';');
+    
+    for (const part of parts) {
+        const colonIndex = part.indexOf(':');
+        if (colonIndex === -1) continue;
+        
+        const key = part.substring(0, colonIndex);
+        const value = part.substring(colonIndex + 1);
+        
+        if (key === 'forward') {
+            options.forwardUrl = value;
+        } else if (key === 'detectChanges') {
+            options.detectChanges = value === 'true';
+        } else if (key === 'fields') {
+            options.fields = value.split(',').map(f => f.trim());
+        }
+    }
+    
+    return options;
+}
+
+
 

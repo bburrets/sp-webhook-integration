@@ -65,7 +65,7 @@ app.http('webhook-sync', {
 
 // Timer trigger for automatic sync
 app.timer('webhook-sync-timer', {
-    schedule: '0 */30 * * * *', // Every 30 minutes
+    schedule: '0 0 * * * *', // Every hour instead of every 30 minutes
     handler: async (myTimer, context) => {
         context.log('Timer triggered webhook sync');
         
