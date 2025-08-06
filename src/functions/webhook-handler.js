@@ -1,6 +1,7 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
 const EnhancedForwarder = require('../shared/enhanced-forwarder');
+const config = require('../shared/config');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -103,7 +104,7 @@ app.http('webhook-handler', {
 
 // Track recent notifications to prevent loops
 const recentNotifications = new Map();
-const LOOP_PREVENTION_WINDOW = 10000; // 10 seconds
+const LOOP_PREVENTION_WINDOW = config.webhook.loopPreventionWindow;
 
 async function processNotification(notification, context) {
     try {
@@ -143,7 +144,7 @@ async function processNotification(notification, context) {
         const clientState = notification.clientState;
         
         // Skip processing if this is our own webhook handler being notified
-        if (process.env.SKIP_SELF_NOTIFICATIONS === 'true' && 
+        if (config.features.skipSelfNotifications && 
             notification.notificationUrl && 
             notification.notificationUrl.includes('webhook-handler')) {
             context.log('Skipping self-notification to prevent loops');

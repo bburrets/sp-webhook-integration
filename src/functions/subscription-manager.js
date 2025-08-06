@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
+const config = require('../shared/config');
 
 // Subscription management endpoint
 app.http('subscription-manager', {
@@ -9,10 +10,10 @@ app.http('subscription-manager', {
         context.log('Subscription manager request:', request.method);
 
         try {
-            // Get environment variables
-            const clientId = process.env.AZURE_CLIENT_ID;
-            const clientSecret = process.env.AZURE_CLIENT_SECRET;
-            const tenantId = process.env.AZURE_TENANT_ID;
+            // Get Azure credentials from config
+            const clientId = config.azure.clientId;
+            const clientSecret = config.azure.clientSecret;
+            const tenantId = config.azure.tenantId;
             
             if (!clientId || !clientSecret || !tenantId) {
                 return {
@@ -72,7 +73,7 @@ async function getAccessToken(clientId, clientSecret, tenantId, context) {
         const tokenParams = new URLSearchParams();
         tokenParams.append('client_id', clientId);
         tokenParams.append('client_secret', clientSecret);
-        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
+        tokenParams.append('scope', config.api.graph.scope);
         tokenParams.append('grant_type', 'client_credentials');
 
         const tokenResponse = await axios.post(tokenUrl, tokenParams, {
@@ -92,7 +93,7 @@ async function getAccessToken(clientId, clientSecret, tenantId, context) {
 
 async function listSubscriptions(accessToken, context) {
     try {
-        const response = await axios.get('https://graph.microsoft.com/v1.0/subscriptions', {
+        const response = await axios.get(`${config.api.graph.baseUrl}/subscriptions`, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json'
@@ -146,18 +147,18 @@ async function createSubscription(accessToken, subscriptionData, context) {
             notificationUrl: notificationUrl,
             resource: resource,
             expirationDateTime: expiration,
-            clientState: subscriptionData.clientState || 'SharePointWebhook'
+            clientState: subscriptionData.clientState || config.webhook.defaultClientState
         };
 
         context.log('Creating subscription:', subscription);
 
         try {
-            const response = await axios.post('https://graph.microsoft.com/v1.0/subscriptions', subscription, {
+            const response = await axios.post(`${config.api.graph.baseUrl}/subscriptions`, subscription, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 30000 // 30 second timeout
+                timeout: config.api.timeout
             });
 
             context.log('Subscription created successfully:', response.data.id);
@@ -262,8 +263,8 @@ async function deleteSubscription(accessToken, subscriptionId, context) {
 
 async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
     try {
-        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
-        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
+        const listId = config.sharepoint.lists.webhookManagement;
+        const sitePath = config.sharepoint.primarySite.sitePath;
         
         if (action === 'created') {
             // Extract site and list info from resource
@@ -276,12 +277,8 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 siteUrl = parts[0];
                 listIdValue = parts[1];
                 
-                // Map known list IDs to names
-                if (listIdValue === '30516097-c58c-478c-b87f-76c8f6ce2b56') {
-                    listName = 'testList';
-                } else if (listIdValue === '82a105da-8206-4bd0-851b-d3f2260043f4') {
-                    listName = 'Webhook Management';
-                }
+                // Map known list IDs to names using config
+                listName = config.sharepoint.listMappings[listIdValue] || 'Unknown List';
             }
             
             // Determine resource type
@@ -319,7 +316,7 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 }
             };
             
-            const apiUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items`;
+            const apiUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items`;
             await axios.post(apiUrl, itemData, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,

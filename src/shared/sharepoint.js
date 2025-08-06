@@ -1,8 +1,9 @@
 const { getListItems, createListItem, updateListItem } = require('./graph-api');
+const config = require('./config');
 
-// Default SharePoint configuration
-const SITE_PATH = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
-const LIST_ID = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+// Default SharePoint configuration from config
+const SITE_PATH = config.sharepoint.primarySite.sitePath;
+const LIST_ID = config.sharepoint.lists.webhookManagement;
 
 /**
  * Find a webhook item in SharePoint list by subscription ID
@@ -37,12 +38,8 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
             siteUrl = parts[0];
             listIdValue = parts[1];
             
-            // Map known list IDs to names
-            if (listIdValue === '30516097-c58c-478c-b87f-76c8f6ce2b56') {
-                listName = 'testList';
-            } else if (listIdValue === '82a105da-8206-4bd0-851b-d3f2260043f4') {
-                listName = 'Webhook Management';
-            }
+            // Map known list IDs to names using config
+            listName = config.sharepoint.listMappings[listIdValue] || 'Unknown List';
         }
         
         // Determine resource type
