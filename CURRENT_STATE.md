@@ -94,7 +94,7 @@ curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/tes
 - **Status**: Running ✅
 - **Last Deployment**: Successfully deployed with all functions
 - **Branch**: `feature/webhook-proxy-forwarding`
-- **Function Key**: `yg46Yo3hgkODuN7oA5PTd4N-Wbu7Oj5YsNVz7uUM0EJJAzFuBKVhEA==`
+- **Function Key**: `<REDACTED_FUNCTION_KEY>`
 
 ## 📝 Next Steps Recommended
 
@@ -133,7 +133,7 @@ The core objective of allowing external services to receive SharePoint notificat
 # Get a test URL from webhook.site
 # Then create a webhook that forwards to it:
 
-curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/test-webhook-creation?code=yg46Yo3hgkODuN7oA5PTd4N-Wbu7Oj5YsNVz7uUM0EJJAzFuBKVhEA==" \
+curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/test-webhook-creation?code=<REDACTED_FUNCTION_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
     "resource": "sites/fambrandsllc.sharepoint.com:/sites/sphookmanagement:/lists/30516097-c58c-478c-b87f-76c8f6ce2b56",
