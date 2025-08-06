@@ -1,6 +1,8 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
 const { TableClient } = require('@azure/data-tables');
+const { getAccessToken } = require('../shared/auth');
+const config = require('../shared/config');
 
 // Initialize states for all items in a list
 app.http('initialize-item-states', {
@@ -20,23 +22,11 @@ app.http('initialize-item-states', {
                 };
             }
             
-            // Get access token
-            const clientId = process.env.AZURE_CLIENT_ID;
-            const clientSecret = process.env.AZURE_CLIENT_SECRET;
-            const tenantId = process.env.AZURE_TENANT_ID;
-            
-            const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-            const tokenParams = new URLSearchParams();
-            tokenParams.append('client_id', clientId);
-            tokenParams.append('client_secret', clientSecret);
-            tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-            tokenParams.append('grant_type', 'client_credentials');
-
-            const tokenResponse = await axios.post(tokenUrl, tokenParams);
-            const accessToken = tokenResponse.data.access_token;
+            // Get access token using shared auth module
+            const accessToken = await getAccessToken(context);
             
             // Get all items from the list
-            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$top=999`;
+            const listUrl = `${config.api.graph.baseUrl}/${resource}/items?$expand=fields&$top=999`;
             const response = await axios.get(listUrl, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,

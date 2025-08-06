@@ -1,6 +1,7 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
 const config = require('../shared/config');
+const { getAccessToken } = require('../shared/auth');
 
 // Subscription management endpoint
 app.http('subscription-manager', {
@@ -24,8 +25,8 @@ app.http('subscription-manager', {
                 };
             }
 
-            // Get access token
-            const accessToken = await getAccessToken(clientId, clientSecret, tenantId, context);
+            // Get access token using shared auth module
+            const accessToken = await getAccessToken(context);
             
             if (request.method === 'GET') {
                 // List existing subscriptions
@@ -66,30 +67,7 @@ app.http('subscription-manager', {
     }
 });
 
-async function getAccessToken(clientId, clientSecret, tenantId, context) {
-    try {
-        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-        
-        const tokenParams = new URLSearchParams();
-        tokenParams.append('client_id', clientId);
-        tokenParams.append('client_secret', clientSecret);
-        tokenParams.append('scope', config.api.graph.scope);
-        tokenParams.append('grant_type', 'client_credentials');
-
-        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-
-        context.log('Access token obtained successfully');
-        return tokenResponse.data.access_token;
-
-    } catch (error) {
-        context.error('Error getting access token:', error.response?.data || error.message);
-        throw new Error('Failed to obtain access token');
-    }
-}
+// Removed duplicate getAccessToken - now using shared auth module
 
 async function listSubscriptions(accessToken, context) {
     try {
@@ -224,7 +202,7 @@ async function createSubscription(accessToken, subscriptionData, context) {
 
 async function deleteSubscription(accessToken, subscriptionId, context) {
     try {
-        await axios.delete(`https://graph.microsoft.com/v1.0/subscriptions/${subscriptionId}`, {
+        await axios.delete(`${config.api.graph.baseUrl}/subscriptions/${subscriptionId}`, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`
             }
@@ -330,7 +308,7 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
         } else if (action === 'deleted') {
             // Find and update the item in SharePoint list using Graph API
             // Note: Can't filter by SubscriptionId as it's not indexed, so we get all items and filter in memory
-            const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
+            const searchUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
             const searchResponse = await axios.get(searchUrl, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -344,7 +322,7 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
             );
             
             if (matchingItem) {
-                const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${matchingItem.id}`;
+                const updateUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items/${matchingItem.id}`;
                 
                 await axios.patch(updateUrl, {
                     fields: {

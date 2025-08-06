@@ -2,6 +2,7 @@ const { app } = require('@azure/functions');
 const axios = require('axios');
 const EnhancedForwarder = require('../shared/enhanced-forwarder');
 const config = require('../shared/config');
+const { getAccessToken } = require('../shared/auth');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -164,19 +165,7 @@ async function processNotification(notification, context) {
         if (clientState && clientState.startsWith('forward:')) {
             try {
                 // Get access token for enhanced forwarding
-                const clientId = process.env.AZURE_CLIENT_ID;
-                const clientSecret = process.env.AZURE_CLIENT_SECRET;
-                const tenantId = process.env.AZURE_TENANT_ID;
-                
-                const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-                const tokenParams = new URLSearchParams();
-                tokenParams.append('client_id', clientId);
-                tokenParams.append('client_secret', clientSecret);
-                tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-                tokenParams.append('grant_type', 'client_credentials');
-
-                const tokenResponse = await axios.post(tokenUrl, tokenParams);
-                const accessToken = tokenResponse.data.access_token;
+                const accessToken = await getAccessToken(context);
                 
                 // Create enhanced forwarder
                 const forwarder = new EnhancedForwarder(context, accessToken);
@@ -255,36 +244,15 @@ async function processNotification(notification, context) {
 
 async function updateForwardingStats(subscriptionId, context) {
     try {
-        // Get access token
-        const clientId = process.env.AZURE_CLIENT_ID;
-        const clientSecret = process.env.AZURE_CLIENT_SECRET;
-        const tenantId = process.env.AZURE_TENANT_ID;
-        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
-        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
-        
-        if (!clientId || !clientSecret || !tenantId) {
-            context.log.warn('Missing Azure credentials for SharePoint update');
-            return;
-        }
+        // Get configuration
+        const listId = config.sharepoint.lists.webhookManagement;
+        const sitePath = config.sharepoint.primarySite.sitePath;
         
         // Get access token
-        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-        const tokenParams = new URLSearchParams();
-        tokenParams.append('client_id', clientId);
-        tokenParams.append('client_secret', clientSecret);
-        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-        tokenParams.append('grant_type', 'client_credentials');
-
-        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-        
-        const accessToken = tokenResponse.data.access_token;
+        const accessToken = await getAccessToken(context);
         
         // Get all items from SharePoint list
-        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
+        const searchUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
         const searchResponse = await axios.get(searchUrl, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -298,7 +266,7 @@ async function updateForwardingStats(subscriptionId, context) {
         );
         
         if (matchingItem) {
-            const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${matchingItem.id}`;
+            const updateUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items/${matchingItem.id}`;
             
             // Update LastForwardedDateTime
             await axios.patch(updateUrl, {
@@ -323,37 +291,16 @@ async function updateForwardingStats(subscriptionId, context) {
 
 async function updateNotificationCount(subscriptionId, context) {
     try {
-        // Get access token
-        const clientId = process.env.AZURE_CLIENT_ID;
-        const clientSecret = process.env.AZURE_CLIENT_SECRET;
-        const tenantId = process.env.AZURE_TENANT_ID;
-        const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
-        const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
-        
-        if (!clientId || !clientSecret || !tenantId) {
-            context.warn('Missing Azure credentials for notification count update');
-            return;
-        }
+        // Get configuration
+        const listId = config.sharepoint.lists.webhookManagement;
+        const sitePath = config.sharepoint.primarySite.sitePath;
         
         // Get access token
-        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-        const tokenParams = new URLSearchParams();
-        tokenParams.append('client_id', clientId);
-        tokenParams.append('client_secret', clientSecret);
-        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-        tokenParams.append('grant_type', 'client_credentials');
-
-        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-        
-        const accessToken = tokenResponse.data.access_token;
+        const accessToken = await getAccessToken(context);
         
         // Find the item in SharePoint list using Graph API
         // Note: Can't filter by SubscriptionId as it's not indexed, so we get all items and filter in memory
-        const searchUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
+        const searchUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items?$expand=fields`;
         const searchResponse = await axios.get(searchUrl, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -382,7 +329,7 @@ async function updateNotificationCount(subscriptionId, context) {
             const currentCount = item.fields.NotificationCount || 0;
             
             // Update the notification count using Graph API
-            const updateUrl = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}`;
+            const updateUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items/${itemId}`;
             await axios.patch(updateUrl, {
                 fields: {
                     NotificationCount: currentCount + 1
@@ -413,15 +360,15 @@ async function forwardNotification(notification, forwardingUrl, context) {
             source: 'SharePoint-Webhook-Proxy',
             notification: notification,
             metadata: {
-                processedBy: 'webhook-functions-sharepoint-002',
-                environment: process.env.ENVIRONMENT || 'production'
+                processedBy: config.functionApp.name,
+                environment: config.functionApp.environment
             }
         };
 
 
         // Forward the notification
         const response = await axios.post(forwardingUrl, payload, {
-            timeout: 10000, // 10 second timeout
+            timeout: config.webhook.notificationTimeout,
             headers: {
                 'Content-Type': 'application/json',
                 'X-SharePoint-Webhook-Proxy': 'true',

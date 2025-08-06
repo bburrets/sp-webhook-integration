@@ -1,4 +1,5 @@
 const axios = require('axios');
+const config = require('./config');
 
 /**
  * Get Microsoft Graph access token using client credentials
@@ -6,9 +7,9 @@ const axios = require('axios');
  * @returns {Promise<string>} Access token
  */
 async function getAccessToken(context) {
-    const clientId = process.env.AZURE_CLIENT_ID;
-    const clientSecret = process.env.AZURE_CLIENT_SECRET;
-    const tenantId = process.env.AZURE_TENANT_ID;
+    const clientId = config.azure.clientId;
+    const clientSecret = config.azure.clientSecret;
+    const tenantId = config.azure.tenantId;
     
     if (!clientId || !clientSecret || !tenantId) {
         throw new Error('Missing required Azure AD credentials in environment variables');
@@ -20,7 +21,7 @@ async function getAccessToken(context) {
         const tokenParams = new URLSearchParams();
         tokenParams.append('client_id', clientId);
         tokenParams.append('client_secret', clientSecret);
-        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
+        tokenParams.append('scope', config.api.graph.scope);
         tokenParams.append('grant_type', 'client_credentials');
 
         const tokenResponse = await axios.post(tokenUrl, tokenParams, {

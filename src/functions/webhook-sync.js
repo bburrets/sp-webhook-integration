@@ -1,5 +1,7 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
+const { getAccessToken } = require('../shared/auth');
+const config = require('../shared/config');
 
 // Sync webhooks to SharePoint list using Microsoft Graph API
 app.http('webhook-sync', {
@@ -9,26 +11,12 @@ app.http('webhook-sync', {
         context.log('Webhook sync triggered');
 
         try {
-            // Get environment variables
-            const clientId = process.env.AZURE_CLIENT_ID;
-            const clientSecret = process.env.AZURE_CLIENT_SECRET;
-            const tenantId = process.env.AZURE_TENANT_ID;
-            const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
+            // Get configuration
+            const listId = config.sharepoint.lists.webhookManagement;
+            const sitePath = config.sharepoint.primarySite.sitePath;
             
-            // Using the site path format from the webhook resource
-            const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
-            
-            if (!clientId || !clientSecret || !tenantId) {
-                return {
-                    status: 500,
-                    body: JSON.stringify({
-                        error: 'Missing required environment variables'
-                    })
-                };
-            }
-
-            // Get access token
-            const accessToken = await getAccessToken(clientId, clientSecret, tenantId, context);
+            // Get access token using shared auth module
+            const accessToken = await getAccessToken(context);
             
             // Get all webhooks from Microsoft Graph
             const webhooks = await getWebhooks(accessToken, context);
@@ -70,13 +58,10 @@ app.timer('webhook-sync-timer', {
         context.log('Timer triggered webhook sync');
         
         try {
-            const clientId = process.env.AZURE_CLIENT_ID;
-            const clientSecret = process.env.AZURE_CLIENT_SECRET;
-            const tenantId = process.env.AZURE_TENANT_ID;
-            const listId = process.env.WEBHOOK_LIST_ID || '82a105da-8206-4bd0-851b-d3f2260043f4';
-            const sitePath = 'fambrandsllc.sharepoint.com:/sites/sphookmanagement:';
+            const listId = config.sharepoint.lists.webhookManagement;
+            const sitePath = config.sharepoint.primarySite.sitePath;
             
-            const accessToken = await getAccessToken(clientId, clientSecret, tenantId, context);
+            const accessToken = await getAccessToken(context);
             const webhooks = await getWebhooks(accessToken, context);
             await syncToSharePoint(accessToken, sitePath, listId, webhooks, context);
             
@@ -87,32 +72,11 @@ app.timer('webhook-sync-timer', {
     }
 });
 
-async function getAccessToken(clientId, clientSecret, tenantId, context) {
-    try {
-        const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-        
-        const tokenParams = new URLSearchParams();
-        tokenParams.append('client_id', clientId);
-        tokenParams.append('client_secret', clientSecret);
-        tokenParams.append('scope', 'https://graph.microsoft.com/.default');
-        tokenParams.append('grant_type', 'client_credentials');
-
-        const tokenResponse = await axios.post(tokenUrl, tokenParams, {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-
-        return tokenResponse.data.access_token;
-    } catch (error) {
-        context.log.error('Error getting access token:', error);
-        throw new Error('Failed to obtain access token');
-    }
-}
+// Removed duplicate getAccessToken - now using shared auth module
 
 async function getWebhooks(accessToken, context) {
     try {
-        const response = await axios.get('https://graph.microsoft.com/v1.0/subscriptions', {
+        const response = await axios.get(`${config.api.graph.baseUrl}/subscriptions`, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json'
