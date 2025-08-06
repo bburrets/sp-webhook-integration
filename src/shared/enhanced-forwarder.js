@@ -218,6 +218,9 @@ class EnhancedForwarder {
             // Store current state for next comparison
             await this.storeCurrentState(notification.resource, currentData);
             
+            // Determine if this is the first time we're seeing this item
+            const isFirstTime = !previousData;
+            
             return {
                 ...basePayload,
                 currentState: {
@@ -230,9 +233,11 @@ class EnhancedForwarder {
                     summary: {
                         addedFields: Object.keys(changes.added).length,
                         modifiedFields: Object.keys(changes.modified).length,
-                        removedFields: Object.keys(changes.removed).length
+                        removedFields: Object.keys(changes.removed).length,
+                        isFirstTimeTracking: isFirstTime
                     },
-                    details: changes
+                    details: changes,
+                    message: isFirstTime ? 'This is the first time tracking this item. Future notifications will show specific changes.' : null
                 },
                 previousState: previousData ? {
                     lastModified: previousData.lastModifiedDateTime,

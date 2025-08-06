@@ -79,7 +79,12 @@ Additional columns for tracking:
 - Synchronizes all webhooks with SharePoint list
 - Marks deleted webhooks appropriately
 
-### 4. **check-list-columns** (Admin Tool)
+### 4. **initialize-item-states** (Important for Enhanced Mode)
+- Pre-populates item states for change tracking
+- Prevents empty change notifications on first modification
+- Should be run when setting up webhooks with enhanced forwarding
+
+### 5. **check-list-columns** (Admin Tool)
 - Utility to inspect SharePoint list structure
 - Useful for debugging field issues
 
@@ -105,6 +110,26 @@ curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?
     "changeType": "updated",
     "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
     "clientState": "forward:https://your-service.com/webhook"
+  }'
+```
+
+### Create Enhanced Webhook with Change Detection
+```bash
+# Step 1: Create webhook with enhanced mode
+curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/<site-path>/lists/<list-id>",
+    "changeType": "updated",
+    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
+    "clientState": "forward:https://your-service.com/webhook;mode:withChanges"
+  }'
+
+# Step 2: Initialize existing item states (prevents empty first notifications)
+curl -X POST "https://<function-app>.azurewebsites.net/api/initialize-item-states?code=<key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/<site-path>/lists/<list-id>"
   }'
 ```
 
@@ -252,5 +277,9 @@ This solution is provided as-is for SharePoint webhook management.
 
 ---
 
-For detailed implementation notes and current state, see [CURRENT_STATE.md](CURRENT_STATE.md).
-For proxy forwarding specifics, see [WEBHOOK_PROXY_GUIDE.md](WEBHOOK_PROXY_GUIDE.md).
+## 📚 Additional Documentation
+
+- [WEBHOOK_SETUP_GUIDE.md](docs/WEBHOOK_SETUP_GUIDE.md) - Complete setup guide with initialization
+- [ENHANCED_FORWARDING.md](docs/ENHANCED_FORWARDING.md) - Enhanced forwarding modes and change detection
+- [CURRENT_STATE.md](CURRENT_STATE.md) - Implementation notes and current state
+- [WEBHOOK_PROXY_GUIDE.md](WEBHOOK_PROXY_GUIDE.md) - Proxy forwarding specifics

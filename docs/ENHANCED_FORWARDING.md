@@ -157,9 +157,38 @@ clientState: "forward:https://myapp.com/webhook;mode:withChanges"
 ## Implementation Notes
 
 1. **Performance**: `withChanges` mode requires storing previous states in Azure Table Storage
-2. **First Run**: The first notification in `withChanges` mode won't have previous state
+2. **First Run**: The first notification in `withChanges` mode won't have previous state - use initialize-item-states to prevent this
 3. **Rate Limits**: Enhanced modes make additional Graph API calls - be mindful of limits
 4. **Storage**: Previous states are stored for 30 days by default
+
+## Preventing Empty First Notifications
+
+When using `withChanges` mode, the first modification of any item will show empty changes because there's no previous state to compare against. To avoid this:
+
+### Initialize Item States When Setting Up Webhooks
+
+```bash
+# After creating your webhook with withChanges mode
+curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/initialize-item-states?code=<key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/tenant.sharepoint.com:/sites/mysite:/lists/<listId>"
+  }'
+```
+
+This will:
+- Fetch all existing items from the SharePoint list
+- Store their current state in Azure Table Storage
+- Ensure the next modification shows actual changes instead of empty changes
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Initialized states for 84 items out of 89 total",
+  "resource": "sites/tenant.sharepoint.com:/sites/mysite:/lists/<listId>"
+}
+```
 
 ## Setting Up Enhanced Webhooks
 
