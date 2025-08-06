@@ -4,6 +4,7 @@ const EnhancedForwarder = require('../shared/enhanced-forwarder');
 const config = require('../shared/config');
 const { getAccessToken } = require('../shared/auth');
 const { wrapHandler, validationError } = require('../shared/error-handler');
+const { validateWebhookNotification } = require('../shared/validators');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -49,19 +50,18 @@ app.http('webhook-handler', {
                 throw validationError('Invalid JSON in request body', { parseError: parseError.message });
             }
 
-            // Process each notification
-            if (notifications.value && Array.isArray(notifications.value)) {
-                for (const notification of notifications.value) {
-                    await processNotification(notification, context);
-                }
-                
-                return {
-                    status: 200,
-                    body: 'Notifications processed successfully'
-                };
-            } else {
-                throw validationError('Invalid notification format', { receivedData: notifications });
+            // Validate the notification payload
+            const validatedData = validateWebhookNotification(notifications);
+
+            // Process each validated notification
+            for (const notification of validatedData.value) {
+                await processNotification(notification, context);
             }
+            
+            return {
+                status: 200,
+                body: 'Notifications processed successfully'
+            };
         }
 
         throw validationError('Method not allowed', { method: request.method });

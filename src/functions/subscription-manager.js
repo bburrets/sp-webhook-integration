@@ -3,6 +3,7 @@ const axios = require('axios');
 const config = require('../shared/config');
 const { getAccessToken } = require('../shared/auth');
 const { wrapHandler, validationError, handleError } = require('../shared/error-handler');
+const { validateSubscriptionRequest, validateGuid } = require('../shared/validators');
 
 // Subscription management endpoint
 app.http('subscription-manager', {
@@ -31,8 +32,16 @@ app.http('subscription-manager', {
         if (request.method === 'POST') {
             // Create new subscription
             const requestBody = await request.text();
-            const subscriptionData = JSON.parse(requestBody);
-            return await createSubscription(accessToken, subscriptionData, context);
+            let subscriptionData;
+            try {
+                subscriptionData = JSON.parse(requestBody);
+            } catch (parseError) {
+                throw validationError('Invalid JSON in request body', { parseError: parseError.message });
+            }
+            
+            // Validate the subscription request
+            const validatedData = validateSubscriptionRequest(subscriptionData);
+            return await createSubscription(accessToken, validatedData, context);
         }
         
         if (request.method === 'DELETE') {
@@ -41,7 +50,10 @@ app.http('subscription-manager', {
             if (!subscriptionId) {
                 throw validationError('subscriptionId query parameter is required');
             }
-            return await deleteSubscription(accessToken, subscriptionId, context);
+            
+            // Validate the subscription ID format
+            const validatedId = validateGuid(subscriptionId, 'subscriptionId');
+            return await deleteSubscription(accessToken, validatedId, context);
         }
 
         throw validationError('Method not supported', { method: request.method });
@@ -86,18 +98,8 @@ async function listSubscriptions(accessToken, context) {
 
 async function createSubscription(accessToken, subscriptionData, context) {
     try {
-        // Validate required fields
+        // Extract fields (already validated)
         const { resource, changeType, notificationUrl, expirationDateTime } = subscriptionData;
-        
-        if (!resource || !changeType || !notificationUrl) {
-            throw validationError('Missing required fields: resource, changeType, notificationUrl', {
-                providedFields: {
-                    resource: !!resource,
-                    changeType: !!changeType,
-                    notificationUrl: !!notificationUrl
-                }
-            });
-        }
 
         // Calculate expiration date (max 3 days for SharePoint webhooks)
         const expiration = expirationDateTime || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
