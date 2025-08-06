@@ -93,5 +93,13 @@ module.exports = {
     debug: {
         isDevelopment: process.env.NODE_ENV === 'development',
         showStackTraces: process.env.SHOW_STACK_TRACES === 'true' || process.env.NODE_ENV === 'development'
+    },
+
+    // Logging Configuration
+    logging: {
+        level: process.env.LOG_LEVEL || 'INFO', // ERROR, WARN, INFO, DEBUG
+        format: process.env.LOG_FORMAT || 'json', // json or text
+        includeTimestamp: process.env.LOG_TIMESTAMP !== 'false',
+        includeInvocationId: process.env.LOG_INVOCATION_ID !== 'false'
     }
 };

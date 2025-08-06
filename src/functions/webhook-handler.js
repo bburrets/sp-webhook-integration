@@ -5,6 +5,7 @@ const config = require('../shared/config');
 const { getAccessToken } = require('../shared/auth');
 const { wrapHandler, validationError } = require('../shared/error-handler');
 const { validateWebhookNotification } = require('../shared/validators');
+const { createLogger } = require('../shared/logger');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -12,16 +13,22 @@ app.http('webhook-handler', {
     methods: ['GET', 'POST'],
     authLevel: 'anonymous',
     handler: wrapHandler(async (request, context) => {
-        context.log('Webhook request received:', request.method);
-        context.log('Query parameters:', request.query);
-        context.log('Headers:', request.headers);
+        const logger = createLogger(context);
+        const startTime = Date.now();
+        
+        logger.logRequest(request.method, request.url, {
+            queryParams: Object.fromEntries(request.query.entries()),
+            headers: Object.fromEntries(request.headers.entries())
+        });
 
         // Check for validation token in query string (works for both GET and POST)
         const validationToken = request.query.get('validationToken');
         
         if (validationToken) {
-            context.log('Validation token found:', validationToken);
-            context.log('Request method for validation:', request.method);
+            logger.info('Webhook validation request received', {
+                validationToken,
+                method: request.method
+            });
             
             // Microsoft Graph requires exact 200 status and plain text response
             return {
@@ -41,7 +48,10 @@ app.http('webhook-handler', {
         if (request.method === 'POST') {
             // Handle webhook notifications
             const requestBody = await request.text();
-            context.log('Webhook notification body:', requestBody);
+            logger.debug('Received webhook notification', {
+                bodyLength: requestBody.length,
+                preview: requestBody.substring(0, 200)
+            });
             
             let notifications;
             try {
@@ -54,9 +64,18 @@ app.http('webhook-handler', {
             const validatedData = validateWebhookNotification(notifications);
 
             // Process each validated notification
+            logger.info('Processing webhook notifications', {
+                count: validatedData.value.length
+            });
+            
             for (const notification of validatedData.value) {
                 await processNotification(notification, context);
             }
+            
+            const duration = Date.now() - startTime;
+            logger.logResponse(200, duration, {
+                notificationCount: validatedData.value.length
+            });
             
             return {
                 status: 200,
@@ -81,7 +100,11 @@ async function processNotification(notification, context) {
         // Check if we've seen this notification recently
         const lastSeen = recentNotifications.get(notificationKey);
         if (lastSeen && (now - lastSeen) < LOOP_PREVENTION_WINDOW) {
-            context.log('Duplicate notification detected, skipping to prevent loop');
+            const logger = createLogger(context);
+            logger.warn('Duplicate notification detected, skipping to prevent loop', {
+                notificationKey,
+                timeSinceLastSeen: now - lastSeen
+            });
             return;
         }
         
@@ -95,8 +118,8 @@ async function processNotification(notification, context) {
             }
         }
         
-        context.log('Processing notification:', {
-            subscriptionId: notification.subscriptionId,
+        const logger = createLogger(context);
+        logger.logWebhook('processing', notification.subscriptionId, {
             resource: notification.resource,
             changeType: notification.changeType,
             clientState: notification.clientState
@@ -113,14 +136,15 @@ async function processNotification(notification, context) {
         if (config.features.skipSelfNotifications && 
             notification.notificationUrl && 
             notification.notificationUrl.includes('webhook-handler')) {
-            context.log('Skipping self-notification to prevent loops');
+            logger.info('Skipping self-notification to prevent loops', {
+                notificationUrl: notification.notificationUrl
+            });
             return;
         }
 
         // Log the change details
-        context.log('SharePoint change detected:', {
+        logger.logSharePoint('change-detected', resource, {
             changeType: changeType,
-            resource: resource,
             resourceId: resourceData?.id,
             webId: resourceData?.webId,
             listId: resourceData?.listId
@@ -139,25 +163,33 @@ async function processNotification(notification, context) {
                 const config = forwarder.parseClientState(clientState);
                 
                 if (config && config.forwardUrl) {
-                    context.log(`Enhanced forwarding to: ${config.forwardUrl} with mode: ${config.mode}`);
+                    logger.info('Enhanced forwarding notification', {
+                        forwardUrl: config.forwardUrl,
+                        mode: config.mode
+                    });
                     
                     // Forward with enhanced data
                     const result = await forwarder.forward(notification, config.forwardUrl, config);
                     
                     if (result.success) {
-                        context.log(`Successfully forwarded with enhanced mode: ${config.mode}`);
+                        logger.info('Successfully forwarded notification', {
+                            mode: config.mode,
+                            forwardUrl: config.forwardUrl
+                        });
                         // Update forwarding statistics in background
                         updateForwardingStats(subscriptionId, context).catch(err => 
-                            context.error('Background forwarding stats update failed:', err.message)
+                            logger.error('Background forwarding stats update failed', { error: err.message })
                         );
                     } else {
-                        context.error('Enhanced forwarding failed:', result.error);
+                        logger.error('Enhanced forwarding failed', { error: result.error });
                     }
                 } else {
                     // Fallback to simple forwarding
                     const options = parseClientState(clientState);
                     const forwardingUrl = options.forwardUrl;
-                    context.log(`Simple forwarding to: ${forwardingUrl}`);
+                    logger.info('Simple forwarding notification', {
+                        forwardUrl: forwardingUrl
+                    });
                     
                     const enrichedPayload = {
                         timestamp: new Date().toISOString(),
@@ -171,11 +203,14 @@ async function processNotification(notification, context) {
                     
                     await forwardNotification(enrichedPayload, forwardingUrl, context);
                     updateForwardingStats(subscriptionId, context).catch(err => 
-                        context.error('Background forwarding stats update failed:', err.message)
+                        logger.error('Background forwarding stats update failed', { error: err.message })
                     );
                 }
             } catch (forwardError) {
-                context.error('Failed to forward notification:', forwardError.message);
+                logger.error('Failed to forward notification', {
+                    error: forwardError.message,
+                    subscriptionId
+                });
                 // Continue processing even if forwarding fails
             }
         }
@@ -184,10 +219,13 @@ async function processNotification(notification, context) {
         try {
             // Run in background - don't await
             updateNotificationCount(subscriptionId, context).catch(err => 
-                context.error('Background update failed:', err.message)
+                logger.error('Background notification count update failed', { error: err.message })
             );
         } catch (updateError) {
-            context.error('Failed to start notification count update:', updateError.message);
+            logger.error('Failed to start notification count update', {
+                error: updateError.message,
+                subscriptionId
+            });
         }
 
         // Here you can add your business logic to handle the changes
@@ -197,10 +235,14 @@ async function processNotification(notification, context) {
         // - Update databases
         // - Call other APIs
 
-        context.log('Notification processed successfully');
+        logger.logWebhook('processed', notification.subscriptionId, {
+            resource: notification.resource,
+            changeType: notification.changeType
+        });
 
     } catch (error) {
-        context.error('Error processing individual notification:', {
+        const logger = createLogger(context);
+        logger.error('Error processing individual notification', {
             error: error.message,
             stack: error.stack,
             notification: notification
@@ -248,10 +290,18 @@ async function updateForwardingStats(subscriptionId, context) {
                 }
             });
             
-            context.log(`Updated forwarding stats for webhook ${subscriptionId}`);
+            const logger = createLogger(context);
+            logger.info('Updated forwarding stats', {
+                subscriptionId,
+                lastForwardedDateTime: new Date().toISOString()
+            });
         }
     } catch (error) {
-        context.error('Error updating forwarding stats:', error.message);
+        const logger = createLogger(context);
+        logger.error('Error updating forwarding stats', {
+            error: error.message,
+            subscriptionId
+        });
         // Don't throw - just log the error so notification processing can continue
     }
 }
@@ -276,7 +326,11 @@ async function updateNotificationCount(subscriptionId, context) {
         });
         
         // Log the search results for debugging
-        context.log(`Found ${searchResponse.data.value?.length || 0} items in SharePoint list`);
+        const logger = createLogger(context);
+        logger.debug('SharePoint list search results', {
+            itemCount: searchResponse.data.value?.length || 0,
+            listId
+        });
         
         // Find the item with matching SubscriptionId
         const matchingItem = searchResponse.data.value?.find(item => 
@@ -288,7 +342,10 @@ async function updateNotificationCount(subscriptionId, context) {
             
             // Check if webhook is marked as deleted
             if (item.fields.Status === 'Deleted') {
-                context.warn(`Received notification from deleted webhook ${subscriptionId}. Ignoring.`);
+                logger.warn('Received notification from deleted webhook', {
+                    subscriptionId,
+                    status: item.fields.Status
+                });
                 return;
             }
             
@@ -309,12 +366,23 @@ async function updateNotificationCount(subscriptionId, context) {
                 }
             });
             
-            context.log(`Updated notification count for webhook ${subscriptionId}: ${currentCount + 1}`);
+            logger.info('Updated notification count', {
+                subscriptionId,
+                previousCount: currentCount,
+                newCount: currentCount + 1
+            });
         } else {
-            context.warn(`Webhook ${subscriptionId} not found in SharePoint list. It may have been deleted.`);
+            logger.warn('Webhook not found in SharePoint list', {
+                subscriptionId,
+                suggestion: 'It may have been deleted'
+            });
         }
     } catch (error) {
-        context.error('Error updating notification count:', error.message);
+        const logger = createLogger(context);
+        logger.error('Error updating notification count', {
+            error: error.message,
+            subscriptionId
+        });
         // Don't throw - just log the error so notification processing can continue
     }
 }
@@ -343,15 +411,17 @@ async function forwardNotification(notification, forwardingUrl, context) {
             }
         });
 
-        context.log('Successfully forwarded notification:', {
+        const logger = createLogger(context);
+        logger.info('Successfully forwarded notification', {
             url: forwardingUrl,
             status: response.status,
-            subscriptionId: notification.subscriptionId
+            subscriptionId: notification.subscriptionId || notification.notification?.subscriptionId
         });
 
         return response;
     } catch (error) {
-        context.error('Error forwarding notification:', {
+        const logger = createLogger(context);
+        logger.error('Error forwarding notification', {
             url: forwardingUrl,
             error: error.message,
             subscriptionId: notification.subscriptionId || notification.notification?.subscriptionId
