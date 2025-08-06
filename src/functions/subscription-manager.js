@@ -2,69 +2,50 @@ const { app } = require('@azure/functions');
 const axios = require('axios');
 const config = require('../shared/config');
 const { getAccessToken } = require('../shared/auth');
+const { wrapHandler, validationError, handleError } = require('../shared/error-handler');
 
 // Subscription management endpoint
 app.http('subscription-manager', {
     methods: ['GET', 'POST', 'DELETE'],
     authLevel: 'function',
-    handler: async (request, context) => {
+    handler: wrapHandler(async (request, context) => {
         context.log('Subscription manager request:', request.method);
 
-        try {
-            // Get Azure credentials from config
-            const clientId = config.azure.clientId;
-            const clientSecret = config.azure.clientSecret;
-            const tenantId = config.azure.tenantId;
-            
-            if (!clientId || !clientSecret || !tenantId) {
-                return {
-                    status: 500,
-                    body: JSON.stringify({
-                        error: 'Missing required environment variables: AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID'
-                    })
-                };
-            }
-
-            // Get access token using shared auth module
-            const accessToken = await getAccessToken(context);
-            
-            if (request.method === 'GET') {
-                // List existing subscriptions
-                return await listSubscriptions(accessToken, context);
-            }
-            
-            if (request.method === 'POST') {
-                // Create new subscription
-                const requestBody = await request.text();
-                const subscriptionData = JSON.parse(requestBody);
-                return await createSubscription(accessToken, subscriptionData, context);
-            }
-            
-            if (request.method === 'DELETE') {
-                // Delete subscription
-                const subscriptionId = request.query.get('subscriptionId');
-                if (!subscriptionId) {
-                    return {
-                        status: 400,
-                        body: JSON.stringify({ error: 'subscriptionId query parameter is required' })
-                    };
-                }
-                return await deleteSubscription(accessToken, subscriptionId, context);
-            }
-
-        } catch (error) {
-            context.error('Error in subscription manager:', error);
-            context.error('Error stack:', error.stack);
-            return {
-                status: 500,
-                body: JSON.stringify({
-                    error: 'Internal server error',
-                    details: error.message,
-                    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-                })
-            };
+        // Get Azure credentials from config
+        const clientId = config.azure.clientId;
+        const clientSecret = config.azure.clientSecret;
+        const tenantId = config.azure.tenantId;
+        
+        if (!clientId || !clientSecret || !tenantId) {
+            throw validationError('Missing required environment variables: AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID');
         }
-    }
+
+        // Get access token using shared auth module
+        const accessToken = await getAccessToken(context);
+        
+        if (request.method === 'GET') {
+            // List existing subscriptions
+            return await listSubscriptions(accessToken, context);
+        }
+        
+        if (request.method === 'POST') {
+            // Create new subscription
+            const requestBody = await request.text();
+            const subscriptionData = JSON.parse(requestBody);
+            return await createSubscription(accessToken, subscriptionData, context);
+        }
+        
+        if (request.method === 'DELETE') {
+            // Delete subscription
+            const subscriptionId = request.query.get('subscriptionId');
+            if (!subscriptionId) {
+                throw validationError('subscriptionId query parameter is required');
+            }
+            return await deleteSubscription(accessToken, subscriptionId, context);
+        }
+
+        throw validationError('Method not supported', { method: request.method });
+    })
 });
 
 // Removed duplicate getAccessToken - now using shared auth module
@@ -109,12 +90,13 @@ async function createSubscription(accessToken, subscriptionData, context) {
         const { resource, changeType, notificationUrl, expirationDateTime } = subscriptionData;
         
         if (!resource || !changeType || !notificationUrl) {
-            return {
-                status: 400,
-                body: JSON.stringify({
-                    error: 'Missing required fields: resource, changeType, notificationUrl'
-                })
-            };
+            throw validationError('Missing required fields: resource, changeType, notificationUrl', {
+                providedFields: {
+                    resource: !!resource,
+                    changeType: !!changeType,
+                    notificationUrl: !!notificationUrl
+                }
+            });
         }
 
         // Calculate expiration date (max 3 days for SharePoint webhooks)

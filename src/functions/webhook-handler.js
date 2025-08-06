@@ -3,104 +3,69 @@ const axios = require('axios');
 const EnhancedForwarder = require('../shared/enhanced-forwarder');
 const config = require('../shared/config');
 const { getAccessToken } = require('../shared/auth');
+const { wrapHandler, validationError } = require('../shared/error-handler');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
 app.http('webhook-handler', {
     methods: ['GET', 'POST'],
     authLevel: 'anonymous',
-    handler: async (request, context) => {
+    handler: wrapHandler(async (request, context) => {
         context.log('Webhook request received:', request.method);
         context.log('Query parameters:', request.query);
         context.log('Headers:', request.headers);
 
-        try {
-            // Check for validation token in query string (works for both GET and POST)
-            const validationToken = request.query.get('validationToken');
+        // Check for validation token in query string (works for both GET and POST)
+        const validationToken = request.query.get('validationToken');
+        
+        if (validationToken) {
+            context.log('Validation token found:', validationToken);
+            context.log('Request method for validation:', request.method);
             
-            if (validationToken) {
-                context.log('Validation token found:', validationToken);
-                context.log('Request method for validation:', request.method);
-                
-                // Microsoft Graph requires exact 200 status and plain text response
-                return {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'text/plain',
-                        'Cache-Control': 'no-cache'
-                    },
-                    body: validationToken
-                };
-            }
-
-            if (request.method === 'GET') {
-                return {
-                    status: 400,
-                    headers: {
-                        'Content-Type': 'text/plain'
-                    },
-                    body: 'Missing validation token'
-                };
-            }
-
-            if (request.method === 'POST') {
-                // Handle webhook notifications
-                const requestBody = await request.text();
-                context.log('Webhook notification body:', requestBody);
-                
-                let notifications;
-                try {
-                    notifications = JSON.parse(requestBody);
-                } catch (parseError) {
-                    context.error('Failed to parse request body:', parseError);
-                    return {
-                        status: 400,
-                        body: 'Invalid JSON in request body'
-                    };
-                }
-
-                // Process each notification
-                if (notifications.value && Array.isArray(notifications.value)) {
-                    for (const notification of notifications.value) {
-                        await processNotification(notification, context);
-                    }
-                    
-                    return {
-                        status: 200,
-                        body: 'Notifications processed successfully'
-                    };
-                } else {
-                    context.error('Invalid notification format:', notifications);
-                    return {
-                        status: 400,
-                        body: 'Invalid notification format'
-                    };
-                }
-            }
-
+            // Microsoft Graph requires exact 200 status and plain text response
             return {
-                status: 405,
-                body: 'Method not allowed'
-            };
-
-        } catch (error) {
-            context.error('Error processing webhook:', error);
-            context.error('Error stack:', error.stack);
-            context.error('Error details:', {
-                message: error.message,
-                name: error.name,
-                code: error.code
-            });
-            return {
-                status: 500,
-                body: JSON.stringify({
-                    error: 'Internal server error',
-                    message: error.message,
-                    details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-                })
+                status: 200,
+                headers: {
+                    'Content-Type': 'text/plain',
+                    'Cache-Control': 'no-cache'
+                },
+                body: validationToken
             };
         }
-    }
+
+        if (request.method === 'GET') {
+            throw validationError('Missing validation token');
+        }
+
+        if (request.method === 'POST') {
+            // Handle webhook notifications
+            const requestBody = await request.text();
+            context.log('Webhook notification body:', requestBody);
+            
+            let notifications;
+            try {
+                notifications = JSON.parse(requestBody);
+            } catch (parseError) {
+                throw validationError('Invalid JSON in request body', { parseError: parseError.message });
+            }
+
+            // Process each notification
+            if (notifications.value && Array.isArray(notifications.value)) {
+                for (const notification of notifications.value) {
+                    await processNotification(notification, context);
+                }
+                
+                return {
+                    status: 200,
+                    body: 'Notifications processed successfully'
+                };
+            } else {
+                throw validationError('Invalid notification format', { receivedData: notifications });
+            }
+        }
+
+        throw validationError('Method not allowed', { method: request.method });
+    })
 });
 
 // Track recent notifications to prevent loops
@@ -235,9 +200,11 @@ async function processNotification(notification, context) {
         context.log('Notification processed successfully');
 
     } catch (error) {
-        context.error('Error processing individual notification:', error);
-        context.error('Notification error stack:', error.stack);
-        context.error('Failed notification:', JSON.stringify(notification, null, 2));
+        context.error('Error processing individual notification:', {
+            error: error.message,
+            stack: error.stack,
+            notification: notification
+        });
         throw error;
     }
 }
