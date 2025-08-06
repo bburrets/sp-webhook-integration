@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
+const EnhancedForwarder = require('../shared/enhanced-forwarder');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -160,38 +161,64 @@ async function processNotification(notification, context) {
 
         // Check if this notification should be forwarded
         if (clientState && clientState.startsWith('forward:')) {
-            // Parse clientState for options (format: "forward:url;detectChanges:true;fields:Title,Status")
-            const options = parseClientState(clientState);
-            const forwardingUrl = options.forwardUrl;
-            context.log(`Forwarding notification to: ${forwardingUrl}`);
-            
-            // Prepare enriched payload
-            let enrichedPayload = {
-                timestamp: new Date().toISOString(),
-                source: 'SharePoint-Webhook-Proxy',
-                notification: notification,
-                metadata: {
-                    processedBy: process.env.WEBSITE_HOSTNAME || 'webhook-handler',
-                    environment: process.env.AZURE_FUNCTIONS_ENVIRONMENT || 'production'
-                }
-            };
-            
-            // Add notification about change detection limitation
-            if (options.detectChanges) {
-                enrichedPayload.changeDetection = {
-                    enabled: true,
-                    limitation: "SharePoint webhooks don't include item IDs",
-                    suggestion: "Consider using a separate endpoint to query recent changes",
-                    deltaQueryEndpoint: `/api/get-recent-changes?listId=${notification.resource.split('/')[4]}`
-                };
-            }
-            
             try {
-                await forwardNotification(enrichedPayload, forwardingUrl, context);
-                // Update forwarding statistics in background
-                updateForwardingStats(subscriptionId, context).catch(err => 
-                    context.error('Background forwarding stats update failed:', err.message)
-                );
+                // Get access token for enhanced forwarding
+                const clientId = process.env.AZURE_CLIENT_ID;
+                const clientSecret = process.env.AZURE_CLIENT_SECRET;
+                const tenantId = process.env.AZURE_TENANT_ID;
+                
+                const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+                const tokenParams = new URLSearchParams();
+                tokenParams.append('client_id', clientId);
+                tokenParams.append('client_secret', clientSecret);
+                tokenParams.append('scope', 'https://graph.microsoft.com/.default');
+                tokenParams.append('grant_type', 'client_credentials');
+
+                const tokenResponse = await axios.post(tokenUrl, tokenParams);
+                const accessToken = tokenResponse.data.access_token;
+                
+                // Create enhanced forwarder
+                const forwarder = new EnhancedForwarder(context, accessToken);
+                
+                // Parse enhanced clientState
+                const config = forwarder.parseClientState(clientState);
+                
+                if (config && config.forwardUrl) {
+                    context.log(`Enhanced forwarding to: ${config.forwardUrl} with mode: ${config.mode}`);
+                    
+                    // Forward with enhanced data
+                    const result = await forwarder.forward(notification, config.forwardUrl, config);
+                    
+                    if (result.success) {
+                        context.log(`Successfully forwarded with enhanced mode: ${config.mode}`);
+                        // Update forwarding statistics in background
+                        updateForwardingStats(subscriptionId, context).catch(err => 
+                            context.error('Background forwarding stats update failed:', err.message)
+                        );
+                    } else {
+                        context.error('Enhanced forwarding failed:', result.error);
+                    }
+                } else {
+                    // Fallback to simple forwarding
+                    const options = parseClientState(clientState);
+                    const forwardingUrl = options.forwardUrl;
+                    context.log(`Simple forwarding to: ${forwardingUrl}`);
+                    
+                    const enrichedPayload = {
+                        timestamp: new Date().toISOString(),
+                        source: 'SharePoint-Webhook-Proxy',
+                        notification: notification,
+                        metadata: {
+                            processedBy: process.env.WEBSITE_HOSTNAME || 'webhook-handler',
+                            environment: process.env.AZURE_FUNCTIONS_ENVIRONMENT || 'production'
+                        }
+                    };
+                    
+                    await forwardNotification(enrichedPayload, forwardingUrl, context);
+                    updateForwardingStats(subscriptionId, context).catch(err => 
+                        context.error('Background forwarding stats update failed:', err.message)
+                    );
+                }
             } catch (forwardError) {
                 context.error('Failed to forward notification:', forwardError.message);
                 // Continue processing even if forwarding fails
