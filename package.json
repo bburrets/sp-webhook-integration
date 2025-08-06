@@ -7,7 +7,9 @@
     "start": "func start",
     "deploy": "func azure functionapp publish webhook-functions-sharepoint-002",
     "logs": "func azure functionapp logstream webhook-functions-sharepoint-002",
-    "test": "echo \"No tests configured yet\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "clean": "rm -rf node_modules package-lock.json"
   },
   "keywords": [
@@ -20,11 +22,15 @@
   "author": "FAM Brands LLC",
   "license": "Proprietary",
   "dependencies": {
+    "@azure/data-tables": "^13.2.2",
     "@azure/functions": "^4.7.2-preview",
-    "axios": "^1.11.0",
-    "@azure/data-tables": "^13.2.2"
+    "axios": "^1.11.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.0.5"
   }
 }
