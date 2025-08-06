@@ -57,27 +57,43 @@ This document summarizes the improvements made to the SharePoint webhook solutio
   - Regression prevention
   - Better code confidence
 
+#### 5. Input Validation for Webhooks ✅
+- **File**: `src/shared/validators.js`
+- **Changes**:
+  - Created comprehensive validation module
+  - Added webhook notification validation
+  - Added subscription request validation
+  - Validates GUIDs, resource formats, and URLs
+  - Includes input sanitization functions
+- **Benefits**:
+  - Prevents invalid data from being processed
+  - Better error messages for clients
+  - Protection against malformed requests
+  - Consistent validation across endpoints
+
+#### 6. Reorganized Test/Utility Functions ✅
+- **Changes**:
+  - Moved all test/utility functions to `src/utilities/`
+  - Created `.funcignore` to exclude from deployment
+  - Added README explaining utility functions
+  - Kept only 5 production functions in `src/functions/`
+- **Benefits**:
+  - Clear separation of production vs development code
+  - Smaller deployment package
+  - Reduced security surface area
+  - Better code organization
+
 ### 🔄 Remaining Improvements (TODO)
 
-#### 5. Add Input Validation for Webhooks
-- Implement request validation middleware
-- Add schema validation for webhook payloads
-- Validate required fields and data types
-
-#### 6. Implement Token Caching for Performance
+#### 7. Implement Token Caching for Performance
 - Add in-memory token cache with TTL
 - Reduce authentication API calls
 - Implement cache invalidation logic
 
-#### 7. Add Structured Logging
+#### 8. Add Structured Logging
 - Replace console.log with structured logger
 - Add log levels and categories
 - Implement log aggregation support
-
-#### 8. Reorganize Test/Utility Functions
-- Move test functions to separate directory
-- Create clear separation between production and utility code
-- Update deployment to exclude test functions
 
 ## Commits Made
 
@@ -100,6 +116,12 @@ This document summarizes the improvements made to the SharePoint webhook solutio
    - Set up Jest configuration
    - Created initial test suite
    - Added mock utilities
+
+5. **feat: add input validation and reorganize utility functions**
+   - Created validators.js module
+   - Implemented comprehensive validation
+   - Reorganized utility functions
+   - Added deployment exclusions
 
 ## Testing
 
