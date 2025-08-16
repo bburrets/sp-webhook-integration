@@ -122,9 +122,9 @@ The core objective of allowing external services to receive SharePoint notificat
 
 ## 📁 Related Documentation
 
-- [Webhook Proxy Guide](./WEBHOOK_PROXY_GUIDE.md) - Detailed proxy feature documentation
+- [Webhook Proxy Guide](../guides/WEBHOOK_PROXY_GUIDE.md) - Detailed proxy feature documentation
 - [SharePoint List Viewing](./SHAREPOINT_LIST_VIEWING.md) - How to view/manage webhooks in SharePoint
-- [Deployment Guide](./DEPLOYMENT_GUIDE.md) - Azure deployment instructions
+- [Deployment Guide](../guides/DEPLOYMENT_GUIDE.md) - Azure deployment instructions
 
 ## 🧪 Testing the Solution
 

@@ -110,11 +110,107 @@ async function updateListItem(accessToken, sitePath, listId, itemId, fields) {
     return response.data;
 }
 
+/**
+ * Get SharePoint site information
+ * @param {string} accessToken - Graph API access token
+ * @param {string} sitePath - SharePoint site path
+ * @returns {Promise<Object>} Site information
+ */
+async function getSiteInfo(accessToken, sitePath) {
+    const url = `https://graph.microsoft.com/v1.0/sites/${sitePath}`;
+    const response = await axios.get(url, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json'
+        }
+    });
+    
+    return response.data;
+}
+
+/**
+ * Get drive item (document) information
+ * @param {string} accessToken - Graph API access token
+ * @param {string} siteId - SharePoint site ID
+ * @param {string} itemId - Drive item ID
+ * @returns {Promise<Object>} Drive item information
+ */
+async function getDriveItem(accessToken, siteId, itemId) {
+    const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${itemId}`;
+    const response = await axios.get(url, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json'
+        }
+    });
+    
+    return response.data;
+}
+
+/**
+ * Get drive item download URL
+ * @param {string} accessToken - Graph API access token
+ * @param {string} siteId - SharePoint site ID
+ * @param {string} itemId - Drive item ID
+ * @returns {Promise<string>} Download URL
+ */
+async function getDriveItemDownloadUrl(accessToken, siteId, itemId) {
+    const driveItem = await getDriveItem(accessToken, siteId, itemId);
+    return driveItem['@microsoft.graph.downloadUrl'] || null;
+}
+
+/**
+ * Download drive item content
+ * @param {string} accessToken - Graph API access token
+ * @param {string} siteId - SharePoint site ID
+ * @param {string} itemId - Drive item ID
+ * @returns {Promise<Buffer>} File content as buffer
+ */
+async function downloadDriveItemContent(accessToken, siteId, itemId) {
+    const downloadUrl = await getDriveItemDownloadUrl(accessToken, siteId, itemId);
+    
+    if (!downloadUrl) {
+        throw new Error('No download URL available for this item');
+    }
+
+    const response = await axios.get(downloadUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60000 // 60 seconds for file downloads
+    });
+    
+    return Buffer.from(response.data);
+}
+
+/**
+ * Get list attachments for a specific item
+ * @param {string} accessToken - Graph API access token
+ * @param {string} sitePath - SharePoint site path
+ * @param {string} listId - SharePoint list ID
+ * @param {string} itemId - List item ID
+ * @returns {Promise<Array>} Array of attachments
+ */
+async function getListItemAttachments(accessToken, sitePath, listId, itemId) {
+    const url = `https://graph.microsoft.com/v1.0/sites/${sitePath}/lists/${listId}/items/${itemId}/attachments`;
+    const response = await axios.get(url, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json'
+        }
+    });
+    
+    return response.data.value || [];
+}
+
 module.exports = {
     getSubscriptions,
     createSubscription,
     deleteSubscription,
     getListItems,
     createListItem,
-    updateListItem
+    updateListItem,
+    getSiteInfo,
+    getDriveItem,
+    getDriveItemDownloadUrl,
+    downloadDriveItemContent,
+    getListItemAttachments
 };

@@ -1,43 +1,74 @@
-# SharePoint Webhook Solution
+# SharePoint Webhook Solution with UiPath Integration
 
-A production-ready Azure Functions solution for monitoring SharePoint list changes in real-time using Microsoft Graph webhooks, with built-in proxy forwarding and centralized management.
+A production-ready Azure Functions solution for monitoring SharePoint list changes in real-time, automatically processing them through UiPath queues, and forwarding notifications to external services.
 
-## 🚀 Key Features
+## 🎯 Why This Project?
 
-- **Real-time Change Monitoring**: Instant notifications when SharePoint lists are modified
-- **Webhook Proxy**: Forward notifications to external services without validation requirements
-- **Centralized Management**: All webhooks tracked in a SharePoint management list
-- **Auto-sync**: Timer function keeps webhook status synchronized every 30 minutes
-- **Complete Visibility**: Track notification counts, forwarding URLs, and statistics
-- **Production Ready**: Proper error handling, logging, and Azure Functions v4 compatibility
+**Problem:** SharePoint webhooks are limited - they don't tell you what changed, just that something changed. They also require complex validation that many services can't handle.
+
+**Solution:** This project acts as an intelligent middleware that:
+- ✅ Detects and enriches SharePoint changes with actual data
+- ✅ Routes items to UiPath robots for automation
+- ✅ Forwards notifications to any external service
+- ✅ Manages all webhooks from a central dashboard
+
+**Real Example:** When a COSTCO routing form status changes to "Send Generated Form", the system automatically extracts all form data and sends it to UiPath robots for processing - no manual intervention needed.
+
+## 🚀 Quick Start for New Visitors
+
+👉 **First time here?** Start with our **[📚 Visitor Onboarding Guide](docs/guides/VISITOR_ONBOARDING_GUIDE.md)** for a 5-minute setup!
+
+## 🌟 Key Features
+
+- **🤖 UiPath Integration**: Automatically send SharePoint items to UiPath Orchestrator queues
+- **📡 Real-time Monitoring**: Instant notifications when SharePoint lists are modified
+- **🔄 Smart Forwarding**: Route notifications to external services without validation hassles
+- **📊 Central Dashboard**: Track all webhooks in a SharePoint management list
+- **🔍 Change Detection**: Know exactly what changed, not just that something changed
+- **⚡ Production Ready**: Enterprise-grade error handling, logging, and monitoring
 
 ## 📋 Prerequisites
 
-- Azure subscription with Function App (Node.js 18+)
-- SharePoint Online site with appropriate permissions
-- Azure AD App Registration with Microsoft Graph permissions:
-  - `Sites.Read.All` or `Sites.ReadWrite.All` (Application permissions)
-  - Admin consent granted
+### Required
+- ✅ Azure subscription with Function App (Node.js 18+)
+- ✅ SharePoint Online site with appropriate permissions
+- ✅ Azure AD App Registration with Microsoft Graph API permissions
+
+### Optional
+- 🤖 UiPath Orchestrator (for automation features)
+- 📊 Application Insights (for monitoring)
+- 🔐 Azure Key Vault (for production)
 
 ## 🏗️ Architecture
 
 ```
-SharePoint Lists → Microsoft Graph → Webhook Handler → Proxy Forwarding → External Services
-                                           ↑
-                                    Subscription Manager
-                                           ↓
-                                 SharePoint Management List
+SharePoint List Changes
+        ↓
+   Microsoft Graph
+        ↓
+   Webhook Handler ←─── Validates & Routes
+        ├─→ UiPath Dispatcher ──→ UiPath Orchestrator Queue
+        ├─→ Enhanced Forwarder ──→ External Services
+        └─→ Notification Counter ──→ SharePoint Dashboard
+              ↑
+        Subscription Manager (CRUD Operations)
 ```
 
-## ⚙️ Environment Variables
+## 🎬 Getting Started
 
-Configure these in your Azure Function App:
+### Option 1: Quick Setup (Recommended)
+Follow our **[📚 Visitor Onboarding Guide](docs/guides/VISITOR_ONBOARDING_GUIDE.md)** for step-by-step setup with examples.
 
+### Option 2: Manual Setup
+1. Clone the repository
+2. Copy `.env.example` to `.env` and configure
+3. Deploy to Azure Functions
+4. Create your first webhook using examples below
+
+### Option 3: Interactive Setup
 ```bash
-AZURE_CLIENT_ID=<your-app-registration-client-id>
-AZURE_CLIENT_SECRET=<your-app-registration-secret>
-AZURE_TENANT_ID=<your-azure-tenant-id>
-WEBHOOK_LIST_ID=82a105da-8206-4bd0-851b-d3f2260043f4  # Your management list ID
+# Coming soon: Interactive setup wizard
+./scripts/setup/interactive-setup.sh
 ```
 
 ## 📊 SharePoint Management List Setup
@@ -88,112 +119,111 @@ Additional columns for tracking:
 - Utility to inspect SharePoint list structure
 - Useful for debugging field issues
 
-## 📡 API Usage
+## 📡 Common Use Cases
 
-### Create a Standard Webhook
+### 1️⃣ Basic SharePoint Monitoring
+Monitor a list and track changes in a dashboard:
 ```bash
-curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>" \
+curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/<site-path>/lists/<list-id>",
+    "resource": "sites/contoso.sharepoint.com:/sites/hr:/lists/a1b2c3d4-e5f6-7890",
     "changeType": "updated",
-    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler"
+    "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler"
   }'
 ```
 
-### Create a Proxy Webhook (with Forwarding)
+### 2️⃣ Send to UiPath Robot Queue
+Automatically process items with UiPath robots:
 ```bash
-curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>" \
+curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/<site-path>/lists/<list-id>",
+    "resource": "sites/contoso.sharepoint.com:/sites/finance:/lists/invoices-list-id",
     "changeType": "updated",
-    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
-    "clientState": "forward:https://your-service.com/webhook"
+    "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
+    "clientState": "processor:uipath"
   }'
 ```
 
-### Create Enhanced Webhook with Change Detection
+### 3️⃣ Forward to External Service
+Send notifications to Teams, Slack, or any webhook:
 ```bash
-# Step 1: Create webhook with enhanced mode
-curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>" \
+curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/<site-path>/lists/<list-id>",
+    "resource": "sites/contoso.sharepoint.com:/sites/it:/lists/tickets-list-id",
     "changeType": "updated",
-    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
-    "clientState": "forward:https://your-service.com/webhook;mode:withChanges"
+    "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
+    "clientState": "forward:https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
   }'
+```
 
-# Step 2: Initialize existing item states (prevents empty first notifications)
-curl -X POST "https://<function-app>.azurewebsites.net/api/initialize-item-states?code=<key>" \
+### 4️⃣ Advanced: Track What Changed
+Get detailed change information:
+```bash
+curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/<site-path>/lists/<list-id>"
+    "resource": "sites/contoso.sharepoint.com:/sites/sales:/lists/opportunities-id",
+    "changeType": "updated",
+    "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
+    "clientState": "forward:https://your-api.com/changes;mode:withChanges"
   }'
 ```
 
-### List All Webhooks
+### 📋 Manage Webhooks
 ```bash
-curl "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>"
+# List all active webhooks
+curl "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY"
+
+# Delete a webhook
+curl -X DELETE "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY&subscriptionId=WEBHOOK_ID"
 ```
 
-### Delete a Webhook
+## 🤖 UiPath Integration Setup
+
+### Step 1: Configure Credentials
 ```bash
-curl -X DELETE "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<key>&subscriptionId=<id>"
+az functionapp config appsettings set \
+  --name your-function-app \
+  --resource-group your-rg \
+  --settings \
+    UIPATH_ORCHESTRATOR_URL="https://cloud.uipath.com/YOUR_ACCOUNT/YOUR_TENANT/orchestrator_" \
+    UIPATH_TENANT_NAME="YOUR_TENANT" \
+    UIPATH_CLIENT_ID="YOUR_CLIENT_ID" \
+    UIPATH_CLIENT_SECRET="YOUR_SECRET" \
+    UIPATH_ORGANIZATION_UNIT_ID="YOUR_FOLDER_ID" \
+    UIPATH_DEFAULT_QUEUE="SharePointChanges" \
+    UIPATH_ENABLED="true"
 ```
 
-## 🔍 How Proxy Forwarding Works
+### Step 2: Use Built-in Template or Create Your Own
+- **COSTCO Template** (built-in): Ready for routing forms
+- **Custom Templates**: See [Visitor Guide](docs/guides/VISITOR_ONBOARDING_GUIDE.md#creating-custom-template) for examples
 
-1. Create webhook with `clientState` starting with `forward:`
-2. SharePoint sends notification to your webhook-handler
-3. Handler validates and enriches the notification
-4. Forwards to the URL specified after `forward:`
-5. Updates SharePoint list with forwarding statistics
-
-### Forwarded Payload Structure
-```json
-{
-  "timestamp": "2024-11-27T10:30:45.123Z",
-  "source": "SharePoint-Webhook-Proxy",
-  "notification": {
-    // Original SharePoint notification
-  },
-  "metadata": {
-    "processedBy": "webhook-functions-sharepoint-002",
-    "environment": "production"
-  }
-}
-```
-
-## 🐛 Troubleshooting
-
-### View Real-time Logs
+### Step 3: Create Webhook with UiPath Processing
 ```bash
-az webapp log tail --name <function-app> --resource-group <rg-name>
+curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "YOUR_SHAREPOINT_LIST_RESOURCE",
+    "changeType": "updated",
+    "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
+    "clientState": "processor:uipath"
+  }'
 ```
 
-### Common Issues
+## 🐛 Quick Troubleshooting
 
-1. **Authentication Errors**
-   - Verify App Registration permissions
-   - Check client secret hasn't expired
-   - Ensure admin consent is granted
+| Issue | Solution |
+|-------|----------|
+| **"Authentication Failed"** | Check Azure AD permissions and run `az functionapp config appsettings list` |
+| **"Webhook Creation Failed"** | Test with `curl YOUR_URL/api/webhook-handler?validationToken=test` |
+| **"UiPath Queue Error"** | Verify credentials and queue exists in Orchestrator |
+| **"No Notifications"** | Run webhook sync: `curl -X POST YOUR_URL/api/webhook-sync?code=KEY` |
 
-2. **Webhook Creation Fails**
-   - Confirm notification URL is publicly accessible
-   - Check SharePoint site permissions
-   - Verify resource path format
-
-3. **Notifications Not Updating Count**
-   - Check webhook-handler logs for errors
-   - Verify SharePoint list permissions
-   - Ensure WEBHOOK_LIST_ID is correct
-
-4. **Proxy Forwarding Not Working**
-   - Check target URL is accessible
-   - Look for 429 (rate limit) errors
-   - Verify clientState format
+📖 **Full troubleshooting guide:** [Visitor Guide - Troubleshooting](docs/guides/VISITOR_ONBOARDING_GUIDE.md#troubleshooting-quick-fixes)
 
 ## 🔒 Security Best Practices
 
@@ -239,47 +269,51 @@ Since SharePoint doesn't tell us which item changed, we use **Delta Query**:
 
 Enable with: `clientState: "forward:https://your-url;detectChanges:true"`
 
-## 🛠️ Development
+## 🛠️ Project Structure
 
-### Project Structure
 ```
 sharepoint-webhooks/
 ├── src/
-│   ├── functions/          # Azure Functions
-│   │   ├── webhook-handler.js
-│   │   ├── subscription-manager.js
-│   │   ├── webhook-sync.js
-│   │   └── check-list-columns.js
-│   └── shared/            # Shared modules
-│       ├── auth.js       # Authentication
-│       ├── graph-api.js  # Graph API operations
-│       └── sharepoint.js # SharePoint helpers
-├── host.json             # Function app config
-├── local.settings.json   # Local development config
-└── package.json          # Dependencies
+│   ├── functions/          # Azure Functions endpoints
+│   ├── shared/            # Core business logic
+│   ├── templates/         # UiPath processors (COSTCO, etc.)
+│   └── utilities/         # Production utilities
+├── test/                  # Test suites and tools
+├── scripts/              # Deployment and setup scripts
+├── docs/                 # Comprehensive documentation
+└── config/               # Environment configurations
 ```
 
-### Local Development
-```bash
-# Install dependencies
-npm install
+## 📚 Documentation & Resources
 
-# Set up local.settings.json with your credentials
-cp local.settings.json.example local.settings.json
+### 🚀 Getting Started
+- **[Visitor Onboarding Guide](docs/guides/VISITOR_ONBOARDING_GUIDE.md)** - Start here! Complete walkthrough with examples
+- **[Local Development Setup](docs/guides/LOCAL_DEV_SETUP.md)** - Set up your development environment
+- **[Deployment Guide](docs/guides/DEPLOYMENT_GUIDE.md)** - Deploy to production
 
-# Run locally
-func start
-```
+### 🤖 UiPath Integration
+- **[UiPath Integration Guide](docs/uipath-integration.md)** - Complete UiPath setup and configuration
+- **[COSTCO Template Setup](docs/COSTCO_INLINE_WEBHOOK_SETUP.md)** - COSTCO-specific implementation
+- **[Creating Custom Templates](docs/guides/VISITOR_ONBOARDING_GUIDE.md#option-b-create-custom-template)** - Build your own processors
+
+### 📖 Advanced Topics
+- **[Enhanced Forwarding](docs/api/ENHANCED_FORWARDING.md)** - Change detection and enrichment
+- **[Architecture Overview](docs/architecture/CURRENT_STATE.md)** - System design and components
+- **[API Reference](docs/api/FUNCTION_REFERENCE.md)** - Complete API documentation
+
+### 🛠️ Tools & Utilities
+- **Environment Configuration:** See `.env.example` for all options
+- **Test Scripts:** Check `test/tools/` for testing utilities
+- **Deployment Scripts:** See `scripts/deployment/` for automation
+
+## 🤝 Contributing
+
+We welcome contributions! Please check our [documentation guide](docs/README.md) for documentation standards.
 
 ## 📄 License
 
-This solution is provided as-is for SharePoint webhook management.
+This solution is provided as-is for SharePoint webhook management and UiPath integration.
 
 ---
 
-## 📚 Additional Documentation
-
-- [WEBHOOK_SETUP_GUIDE.md](docs/WEBHOOK_SETUP_GUIDE.md) - Complete setup guide with initialization
-- [ENHANCED_FORWARDING.md](docs/ENHANCED_FORWARDING.md) - Enhanced forwarding modes and change detection
-- [CURRENT_STATE.md](CURRENT_STATE.md) - Implementation notes and current state
-- [WEBHOOK_PROXY_GUIDE.md](WEBHOOK_PROXY_GUIDE.md) - Proxy forwarding specifics
+**Need help?** Start with the **[📚 Visitor Onboarding Guide](docs/guides/VISITOR_ONBOARDING_GUIDE.md)** or explore the [full documentation](docs/README.md).

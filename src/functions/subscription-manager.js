@@ -249,12 +249,32 @@ async function syncWebhookToSharePoint(accessToken, webhook, action, context) {
                 resourceType = 'List';
             }
             
-            // Check if this is a proxy webhook
+            // Parse client state for proxy/UiPath configuration
             let isProxy = 'No';
             let forwardingUrl = '';
-            if (webhook.clientState && webhook.clientState.startsWith('forward:')) {
-                isProxy = 'Yes';
-                forwardingUrl = webhook.clientState.substring(8);
+            let uipathQueue = '';
+            
+            if (webhook.clientState) {
+                // Check for forwarding configuration
+                if (webhook.clientState.includes('forward:')) {
+                    isProxy = 'Yes';
+                    const forwardMatch = webhook.clientState.match(/forward:([^;]+)/);
+                    if (forwardMatch) {
+                        forwardingUrl = forwardMatch[1];
+                    }
+                }
+                
+                // Check for UiPath configuration
+                if (webhook.clientState.includes('uipath:')) {
+                    const uipathMatch = webhook.clientState.match(/uipath:([^;]+)/);
+                    if (uipathMatch) {
+                        uipathQueue = uipathMatch[1];
+                        // Update title to include UiPath queue info
+                        if (uipathQueue) {
+                            listName = `${listName} → ${uipathQueue}`;
+                        }
+                    }
+                }
             }
             
             // Add webhook to SharePoint list using Graph API

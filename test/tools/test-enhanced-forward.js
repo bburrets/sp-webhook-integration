@@ -1,6 +1,6 @@
 const { app } = require('@azure/functions');
 const axios = require('axios');
-const EnhancedForwarder = require('../shared/enhanced-forwarder');
+const EnhancedForwarder = require('../../src/shared/enhanced-forwarder');
 
 // Test enhanced forwarding directly
 app.http('test-enhanced-forward', {

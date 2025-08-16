@@ -28,12 +28,32 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.*
+config/local/*
+!config/local/.gitkeep
 
 # Test artifacts
 test-results/
 coverage/
+.nyc_output/
+junit.xml
+
+# Code quality
+.eslintcache
+.prettier-cache
+
+# Archive directory
+.archive/
 
 # Temporary files
 tmp/
 temp/
 *.tmp
+
+# Additional IDE files
+.fleet/
+.vscode-test/
+
+# Build artifacts
+dist/
+build/
