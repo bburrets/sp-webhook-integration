@@ -32,7 +32,8 @@ module.exports = {
         listMappings: {
             '30516097-c58c-478c-b87f-76c8f6ce2b56': 'testList',
             '82a105da-8206-4bd0-851b-d3f2260043f4': 'Webhook Management',
-            '9e35f709-48be-4995-8b28-79730ad12b89': 'DWI List'
+            '9e35f709-48be-4995-8b28-79730ad12b89': 'DWI List',
+            '8bfe9dca-9dc3-44a8-8964-ac6d8712d8e3': 'COSTCO US INLINE Routing Tracker (PROD)'
         },
         
         // Known site configurations
@@ -101,5 +102,33 @@ module.exports = {
         format: process.env.LOG_FORMAT || 'json', // json or text
         includeTimestamp: process.env.LOG_TIMESTAMP !== 'false',
         includeInvocationId: process.env.LOG_INVOCATION_ID !== 'false'
+    },
+
+    // UiPath Configuration
+    uipath: {
+        orchestratorUrl: process.env.UIPATH_ORCHESTRATOR_URL,
+        tenantName: process.env.UIPATH_TENANT_NAME,
+        clientId: process.env.UIPATH_CLIENT_ID,
+        clientSecret: process.env.UIPATH_CLIENT_SECRET,
+        organizationUnitId: process.env.UIPATH_ORGANIZATION_UNIT_ID,
+        defaultQueue: process.env.UIPATH_DEFAULT_QUEUE,
+        
+        // API Configuration
+        api: {
+            authEndpoint: '/api/account/authenticate',
+            queueEndpoint: '/odata/Queues/UiPathODataSvc.AddQueueItem',
+            queueItemsEndpoint: '/odata/QueueItems',
+            jobEndpoint: '/odata/Jobs',
+            timeout: 30000, // 30 seconds
+            retryAttempts: 3,
+            retryDelay: 2000 // 2 seconds
+        },
+
+        // Feature flags for UiPath integration
+        features: {
+            enabled: process.env.UIPATH_ENABLED === 'true',
+            autoRetry: process.env.UIPATH_AUTO_RETRY !== 'false',
+            enableLogging: process.env.UIPATH_LOGGING === 'true'
+        }
     }
 };

@@ -6,6 +6,7 @@ const { getAccessToken } = require('../shared/auth');
 const { wrapHandler, validationError } = require('../shared/error-handler');
 const { validateWebhookNotification } = require('../shared/validators');
 const { createLogger } = require('../shared/logger');
+const { processUiPathNotification } = require('./uipath-dispatcher');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -149,6 +150,37 @@ async function processNotification(notification, context) {
             webId: resourceData?.webId,
             listId: resourceData?.listId
         });
+
+        // Check if this notification should be routed to UiPath dispatcher
+        if (clientState && shouldRouteToUiPath(clientState)) {
+            try {
+                logger.info('Routing notification to UiPath dispatcher', {
+                    subscriptionId,
+                    clientState
+                });
+                
+                // Route to UiPath dispatcher
+                const uiPathResult = await routeToUiPathDispatcher(notification, context);
+                
+                if (uiPathResult.success) {
+                    logger.info('Successfully routed to UiPath dispatcher', {
+                        subscriptionId,
+                        processed: uiPathResult.processed
+                    });
+                } else {
+                    logger.error('UiPath dispatcher routing failed', { 
+                        subscriptionId,
+                        error: uiPathResult.error 
+                    });
+                }
+            } catch (uiPathError) {
+                logger.error('Failed to route to UiPath dispatcher', {
+                    error: uiPathError.message,
+                    subscriptionId
+                });
+                // Continue processing even if UiPath routing fails
+            }
+        }
 
         // Check if this notification should be forwarded
         if (clientState && clientState.startsWith('forward:')) {
@@ -459,6 +491,63 @@ function parseClientState(clientState) {
     }
     
     return options;
+}
+
+/**
+ * Check if notification should be routed to UiPath dispatcher
+ * @param {string} clientState - Client state from notification
+ * @returns {boolean} True if should route to UiPath
+ */
+function shouldRouteToUiPath(clientState) {
+    if (!clientState) {
+        return false;
+    }
+
+    // Check for UiPath processor indicator in clientState
+    const lowercaseState = clientState.toLowerCase();
+    return lowercaseState.includes('processor:uipath') || 
+           lowercaseState.includes('uipath:enabled') ||
+           lowercaseState.includes('uipath=true') ||
+           lowercaseState.includes('uipath:'); // Matches any UiPath queue specification
+}
+
+/**
+ * Route notification to UiPath dispatcher
+ * @param {Object} notification - Webhook notification
+ * @param {Object} context - Azure Functions context
+ * @returns {Promise<Object>} Routing result
+ */
+async function routeToUiPathDispatcher(notification, context) {
+    try {
+        const logger = createLogger(context);
+        
+        logger.debug('Routing notification to UiPath dispatcher', {
+            subscriptionId: notification.subscriptionId,
+            resource: notification.resource,
+            changeType: notification.changeType
+        });
+
+        // Process notification using UiPath dispatcher logic
+        const result = await processUiPathNotification(notification, context);
+        
+        return {
+            success: true,
+            processed: result.processed,
+            result: result
+        };
+        
+    } catch (error) {
+        const logger = createLogger(context);
+        logger.error('Error routing to UiPath dispatcher', {
+            error: error.message,
+            notification: notification
+        });
+        
+        return {
+            success: false,
+            error: error.message
+        };
+    }
 }
 
 
