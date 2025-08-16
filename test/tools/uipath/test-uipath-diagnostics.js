@@ -3,9 +3,9 @@
  * Helps debug "queueItemParameters must not be null" and other API issues
  */
 
-const { createUiPathQueueClient } = require('../shared/uipath-queue-client');
-const { createUiPathAuth } = require('../shared/uipath-auth');
-const config = require('../shared/config');
+const { createUiPathQueueClient } = require('../../../src/shared/uipath-queue-client');
+const { createUiPathAuth } = require('../../../src/shared/uipath-auth');
+const config = require('../../../src/shared/config');
 
 async function runDiagnostics() {
     console.log('\n🔍 UiPath API Diagnostics');

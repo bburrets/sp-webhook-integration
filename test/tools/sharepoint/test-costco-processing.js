@@ -3,8 +3,8 @@
  * Tests the complete flow from SharePoint item to UiPath queue
  */
 
-const { createCostcoProcessor } = require('../templates/costco-inline-routing');
-const { createLogger } = require('../shared/logger');
+const { createCostcoProcessor } = require('../../../src/templates/costco-inline-routing');
+const { createLogger } = require('../../../src/shared/logger');
 
 async function testCostcoProcessing() {
     const mockContext = {

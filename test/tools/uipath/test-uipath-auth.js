@@ -3,9 +3,9 @@
  * Use this to verify UiPath credentials are configured correctly
  */
 
-const { UiPathAuth } = require('../shared/uipath-auth');
-const { config } = require('../shared/config');
-const { createLogger } = require('../shared/logger');
+const { UiPathAuth } = require('../../../src/shared/uipath-auth');
+const { config } = require('../../../src/shared/config');
+const { createLogger } = require('../../../src/shared/logger');
 
 async function testAuth() {
     const mockContext = {

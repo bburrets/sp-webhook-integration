@@ -2,7 +2,7 @@
  * Test complete integration with fixed UiPath queue client
  */
 
-const { createUiPathQueueClient } = require('../shared/uipath-queue-client');
+const { createUiPathQueueClient } = require('../../src/shared/uipath-queue-client');
 
 async function testCompleteIntegration() {
     console.log('\n🚀 Testing Complete UiPath Integration');

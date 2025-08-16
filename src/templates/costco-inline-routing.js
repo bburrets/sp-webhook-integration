@@ -9,6 +9,17 @@ const { createLogger } = require('../shared/logger');
 const { createUiPathQueueClient } = require('../shared/uipath-queue-client');
 const { validationError, AppError } = require('../shared/error-handler');
 const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../shared/sharepoint-document-handler');
+const {
+    COSTCO_CONFIG_CONSTANTS,
+    COSTCO_STATUS_VALUES,
+    COSTCO_FIELD_MAPPINGS,
+    COSTCO_REQUIRED_FIELDS,
+    VALIDATION_PATTERNS,
+    HTML_ENTITY_DECODINGS,
+    UIPATH_PRIORITY,
+    UIPATH_PROCESS_TYPES,
+    SERVICE_NAMES
+} = require('../shared/constants');
 
 /**
  * COSTCO field mappings and configuration
@@ -16,57 +27,38 @@ const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../shared/sharepoi
 const COSTCO_CONFIG = {
     // SharePoint list identification
     listIdentifiers: {
-        name: 'COSTCO-INLINE-Trafficking-Routing',
+        name: COSTCO_CONFIG_CONSTANTS.LIST_NAME,
         id: null, // Will be determined dynamically
-        sitePath: 'fambrandsllc.sharepoint.com:/sites/DWI/COSTCO-INLINE-Trafficking-Routing:'
+        sitePath: COSTCO_CONFIG_CONSTANTS.SITE_PATH
     },
 
     // Field mappings: SharePoint internal name -> UiPath queue field name
-    fieldMappings: {
-        // Required fields for processing (using actual SharePoint field names)
-        'ShiptoEmail': 'ShipToEmail',
-        'ShipDate': 'ShipDate',
-        'Style': 'Style',
-        'PO_No': 'PONumber',
-        'GeneratedRoutingFormURL': 'GeneratedRoutingFormURL',
-        'Status': 'Status',
-        'Ship_x002d_To': 'ShipTo',
-        'Pack': 'Pack',
-        
-        // Additional context fields
-        'Title': 'Title',
-        'ID': 'SharePointItemId',
-        'Modified': 'LastModified',
-        'Created': 'Created',
-        'Author': 'CreatedBy',
-        'Editor': 'ModifiedBy'
-    },
+    fieldMappings: COSTCO_FIELD_MAPPINGS,
 
     // Trigger conditions
     triggers: {
         statusField: 'Status',
-        triggerValue: 'Send Generated Form',
-        previousValues: ['Draft', 'In Progress', 'Ready for Review']
+        triggerValue: COSTCO_STATUS_VALUES.SEND_GENERATED_FORM,
+        previousValues: [
+            COSTCO_STATUS_VALUES.DRAFT,
+            COSTCO_STATUS_VALUES.IN_PROGRESS,
+            COSTCO_STATUS_VALUES.READY_FOR_REVIEW
+        ]
     },
 
     // UiPath queue configuration
     queueConfig: {
-        queueName: 'COSTCO-INLINE-Routing',
-        priority: 'High',
-        processType: 'COSTCO_INLINE_ROUTING'
+        queueName: COSTCO_CONFIG_CONSTANTS.QUEUE_NAME,
+        priority: UIPATH_PRIORITY.HIGH,
+        processType: UIPATH_PROCESS_TYPES.COSTCO_INLINE_ROUTING
     },
 
     // Validation rules
     validationRules: {
-        requiredFields: [
-            'ShiptoEmail',
-            'ShipDate', 
-            'Style',
-            'PO_No'
-        ],
-        emailPattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        dateFormat: /^\d{1,2}\/\d{1,2}\/\d{4}/, // M/D/YYYY format as seen in SharePoint
-        poNumberPattern: /^[A-Z0-9\-_,\s]+$/i // Allow commas and spaces for multiple POs
+        requiredFields: COSTCO_REQUIRED_FIELDS,
+        emailPattern: VALIDATION_PATTERNS.EMAIL,
+        dateFormat: VALIDATION_PATTERNS.DATE_MDY,
+        poNumberPattern: VALIDATION_PATTERNS.PO_NUMBER
     }
 };
 
@@ -145,16 +137,11 @@ class CostcoTemplateProcessor {
             return url;
         }
         
-        return url
-            .replace(/&#58;/g, ':')    // Decode HTML entity for colon
-            .replace(/&#x3A;/gi, ':')  // Decode hex HTML entity for colon
-            .replace(/%3A/gi, ':')     // Decode URL-encoded colon
-            .replace(/&amp;/g, '&')    // Decode ampersand
-            .replace(/&#38;/g, '&')    // Decode HTML entity for ampersand
-            .replace(/&lt;/g, '<')     // Decode less than
-            .replace(/&gt;/g, '>')     // Decode greater than
-            .replace(/&quot;/g, '"')   // Decode quote
-            .replace(/&#39;/g, "'");   // Decode apostrophe
+        let decodedUrl = url;
+        for (const [encoded, decoded] of Object.entries(HTML_ENTITY_DECODINGS)) {
+            decodedUrl = decodedUrl.replace(new RegExp(encoded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), decoded);
+        }
+        return decodedUrl;
     }
 
     /**

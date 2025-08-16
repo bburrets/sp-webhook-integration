@@ -8,28 +8,26 @@ const config = require('./config');
 const { createLogger } = require('./logger');
 const { createUiPathAuth } = require('./uipath-auth');
 const { AppError, validationError } = require('./error-handler');
+const {
+    UIPATH_PRIORITY,
+    UIPATH_QUEUE_STATUS,
+    UIPATH_API_ENDPOINTS,
+    SHAREPOINT_FIELD_MAPPINGS,
+    SERVICE_NAMES,
+    ERROR_MESSAGES
+} = require('./constants');
 
 /**
  * Queue item priority levels
+ * @deprecated Use UIPATH_PRIORITY from constants instead
  */
-const Priority = {
-    LOW: 'Low',
-    NORMAL: 'Normal',
-    HIGH: 'High'
-};
+const Priority = UIPATH_PRIORITY;
 
 /**
  * Queue item status values
+ * @deprecated Use UIPATH_QUEUE_STATUS from constants instead
  */
-const QueueItemStatus = {
-    NEW: 'New',
-    IN_PROGRESS: 'InProgress',
-    SUCCESSFUL: 'Successful',
-    FAILED: 'Failed',
-    ABANDONED: 'Abandoned',
-    RETRIED: 'Retried',
-    DELETED: 'Deleted'
-};
+const QueueItemStatus = UIPATH_QUEUE_STATUS;
 
 /**
  * UiPath Queue Client
@@ -42,8 +40,8 @@ class UiPathQueueClient {
         
         // Validate UiPath is enabled
         if (!config.uipath.features.enabled) {
-            this.logger.warn('UiPath integration is disabled', {
-                service: 'uipath',
+            this.logger.warn(ERROR_MESSAGES.UIPATH_DISABLED, {
+                service: SERVICE_NAMES.UIPATH_QUEUE_CLIENT,
                 feature: 'queue_client'
             });
         }
@@ -94,11 +92,11 @@ class UiPathQueueClient {
      */
     validateQueueItem(queueItem) {
         if (!queueItem) {
-            throw validationError('Queue item is required');
+            throw validationError(ERROR_MESSAGES.QUEUE_ITEM_REQUIRED);
         }
 
         if (!queueItem.Name) {
-            throw validationError('Queue item Name is required');
+            throw validationError(ERROR_MESSAGES.QUEUE_NAME_REQUIRED);
         }
 
         if (queueItem.Priority && !Object.values(Priority).includes(queueItem.Priority)) {
@@ -347,7 +345,7 @@ class UiPathQueueClient {
 
         // Define apiUrl outside try block so it's available in catch block
         const targetQueue = queueName || this.defaultQueue;
-        const apiUrl = `${config.uipath.orchestratorUrl}/odata/Queues/UiPathODataSvc.AddQueueItem`;
+        const apiUrl = `${config.uipath.orchestratorUrl}${UIPATH_API_ENDPOINTS.ADD_QUEUE_ITEM}`;
         
         try {
             if (!targetQueue) {

@@ -3,7 +3,7 @@
  * Tests the document handling without requiring UiPath configuration
  */
 
-const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../shared/sharepoint-document-handler');
+const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../../src/shared/sharepoint-document-handler');
 
 // Test HTML content that was causing the "queueItemParameters must not be null" error
 const PROBLEMATIC_HTML = `<div class="ExternalClassBB5440FD6A384D6783890C0CD9B44C5D">

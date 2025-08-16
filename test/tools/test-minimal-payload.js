@@ -2,7 +2,7 @@
  * Test minimal payload submission to UiPath
  */
 
-const { createUiPathAuth } = require('../shared/uipath-auth');
+const { createUiPathAuth } = require('../../src/shared/uipath-auth');
 const axios = require('axios');
 
 async function testMinimalPayload() {

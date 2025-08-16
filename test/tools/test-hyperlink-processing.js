@@ -3,10 +3,10 @@
  * Tests the new document handling strategy for SharePoint hyperlink fields
  */
 
-const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../shared/sharepoint-document-handler');
-const { createCostcoProcessor } = require('../templates/costco-inline-routing');
-const { createUiPathQueueClient } = require('../shared/uipath-queue-client');
-const { createLogger } = require('../shared/logger');
+const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../../src/shared/sharepoint-document-handler');
+const { createCostcoProcessor } = require('../../src/templates/costco-inline-routing');
+const { createUiPathQueueClient } = require('../../src/shared/uipath-queue-client');
+const { createLogger } = require('../../src/shared/logger');
 
 // Test HTML content that was causing the "queueItemParameters must not be null" error
 const PROBLEMATIC_HTML = `<div class="ExternalClassBB5440FD6A384D6783890C0CD9B44C5D">

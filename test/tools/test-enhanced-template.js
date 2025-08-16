@@ -2,7 +2,7 @@
  * Test the enhanced COSTCO template with HTML cleaning
  */
 
-const { CostcoTemplateProcessor } = require('../templates/costco-inline-routing');
+const { CostcoTemplateProcessor } = require('../../src/templates/costco-inline-routing');
 
 async function testEnhancedTemplate() {
     console.log('🧪 Testing Enhanced COSTCO Template');

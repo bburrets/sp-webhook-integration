@@ -1,35 +1,61 @@
-# SharePoint Webhook Integration Documentation
+# SharePoint Webhooks Documentation
 
-This directory contains comprehensive documentation for the SharePoint Webhook Integration solution.
+This directory contains all documentation for the SharePoint Webhooks project.
 
-## Available Documentation
+## Directory Structure
 
-### [UiPath Integration](./uipath-integration.md)
-Complete guide for the UiPath Orchestrator integration, including:
-- Architecture overview and components
-- Configuration and environment variables
-- Usage examples and custom templates
-- API endpoints and testing procedures
-- Monitoring, troubleshooting, and security considerations
+### 📚 Guides (`guides/`)
+Step-by-step instructions and how-to guides:
+- `DEPLOYMENT_GUIDE.md` - Production deployment procedures
+- `LOCAL_DEV_SETUP.md` - Local development environment setup
+- `LOCAL_SHAREPOINT_INTERACTION.md` - SharePoint integration guidance
+- `WEBHOOK_PROXY_GUIDE.md` - Webhook proxy configuration
+
+### 🔧 API Documentation (`api/`)
+Function and API reference documentation:
+- `FUNCTION_REFERENCE.md` - Azure Functions API reference
+- `ENHANCED_FORWARDING.md` - Enhanced forwarding capabilities
+- `SHAREPOINT_HYPERLINK_SOLUTION.md` - SharePoint hyperlink handling
+
+### 🏗️ Architecture (`architecture/`)
+System design and architectural documentation:
+- `CHANGE_DETECTION_DESIGN.md` - Change detection system design
+- `CURRENT_STATE.md` - Current system state and capabilities
+- `DEVELOPMENT_PIPELINE_PLAN.md` - Development pipeline architecture
+- `MONITORING_STRATEGY.md` - System monitoring approach
+
+### 🛠️ Troubleshooting (`troubleshooting/`)
+Debug guides and common issues:
+- `structured-logging-guide.md` - Structured logging implementation
+
+### 📦 UiPath Integration
+UiPath-specific documentation:
+- `COSTCO_INLINE_WEBHOOK_SETUP.md` - COSTCO webhook setup
+- `COSTCO_WEBHOOK_ACTIVE.md` - Active webhook configuration
+- `UIPATH_INTEGRATION_SIMPLIFIED.md` - Simplified UiPath integration
+- `UIPATH_WEBHOOK_INTEGRATION_PLAN.md` - UiPath webhook integration plan
+- `uipath-integration.md` - Comprehensive UiPath integration guide
+
+### 📋 General Documentation
+- `ENHANCED_FEATURES_EXPLAINED.md` - Enhanced features overview
+- `WEBHOOK_SETUP_GUIDE.md` - General webhook setup
+
+### 🗄️ Archive (`archive/`)
+Historical documentation and summaries:
+- `HTML_PAYLOAD_FIX_SUMMARY.md` - HTML payload fix history
+- `IMPROVEMENTS_SUMMARY.md` - System improvements summary
+- `SOLUTION_SUMMARY.md` - Solution development summary
 
 ## Quick Start
 
-1. **Configure Environment Variables**: Set up UiPath Orchestrator connection details
-2. **Deploy Functions**: Deploy the updated function app with UiPath integration
-3. **Configure Webhooks**: Set clientState to include UiPath processor indicators
-4. **Test Integration**: Use the UiPath test function to verify connectivity
-5. **Monitor Logs**: Watch for processing results and error messages
+1. **New to the project?** Start with `guides/LOCAL_DEV_SETUP.md`
+2. **Deploying to production?** See `guides/DEPLOYMENT_GUIDE.md`
+3. **Need API reference?** Check `api/FUNCTION_REFERENCE.md`
+4. **System issues?** Browse `troubleshooting/` directory
 
-## Support
+## UiPath Integration
 
-For technical issues or questions about the integration:
-1. Check the relevant documentation files
-2. Review Azure Function logs for error details
-3. Test individual components using the test functions
-4. Verify configuration settings and permissions
-
-## Architecture Overview
-
+### Architecture Overview
 ```
 SharePoint List Changes
         ↓
@@ -45,3 +71,12 @@ SharePoint List Changes
 ```
 
 The integration is designed to be modular, extensible, and production-ready with comprehensive error handling and logging.
+
+## Contributing
+
+When adding new documentation:
+1. Place guides in `guides/`
+2. Place API docs in `api/`
+3. Place architecture docs in `architecture/`
+4. Archive old docs in `archive/`
+5. Update this README.md with new entries

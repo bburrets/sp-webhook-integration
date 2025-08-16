@@ -14,6 +14,14 @@ const { createLogger } = require('../shared/logger');
 const { createUiPathQueueClient } = require('../shared/uipath-queue-client');
 const { createCostcoProcessor } = require('../templates/costco-inline-routing');
 const EnhancedForwarder = require('../shared/enhanced-forwarder');
+const {
+    HTTP_STATUS,
+    HTTP_HEADERS,
+    CLIENT_STATE_PATTERNS,
+    WEBHOOK_CHANGE_TYPES,
+    SERVICE_NAMES,
+    SUCCESS_MESSAGES
+} = require('../shared/constants');
 
 // UiPath Dispatcher Function
 app.http('uipath-dispatcher', {
@@ -25,7 +33,7 @@ app.http('uipath-dispatcher', {
         
         logger.logRequest(request.method, request.url, {
             headers: Object.fromEntries(request.headers.entries()),
-            service: 'uipath-dispatcher'
+            service: SERVICE_NAMES.UIPATH_DISPATCHER
         });
 
         // Only handle POST requests
@@ -87,12 +95,12 @@ app.http('uipath-dispatcher', {
         });
         
         return {
-            status: 200,
+            status: HTTP_STATUS.OK,
             headers: {
-                'Content-Type': 'application/json'
+                [HTTP_HEADERS.CONTENT_TYPE]: HTTP_HEADERS.CONTENT_TYPE_JSON
             },
             body: JSON.stringify({
-                message: 'UiPath dispatch completed',
+                message: SUCCESS_MESSAGES.UIPATH_DISPATCH_COMPLETED,
                 totalNotifications: validatedData.value.length,
                 processedCount,
                 results: results
@@ -140,7 +148,7 @@ async function processUiPathNotification(notification, context) {
         }
 
         // Only process created and updated items
-        if (!['created', 'updated'].includes(changeType)) {
+        if (![WEBHOOK_CHANGE_TYPES.CREATED, WEBHOOK_CHANGE_TYPES.UPDATED].includes(changeType)) {
             logger.debug('Skipping notification - unsupported change type for UiPath', {
                 changeType,
                 subscriptionId,

@@ -3,7 +3,7 @@
  */
 
 const axios = require('axios');
-const { createUiPathAuth } = require('../shared/uipath-auth');
+const { createUiPathAuth } = require('../../../src/shared/uipath-auth');
 
 async function checkLatestQueueItems() {
     console.log('🔍 Checking Latest UiPath Queue Items');

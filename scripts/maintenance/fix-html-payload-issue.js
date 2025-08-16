@@ -9,8 +9,8 @@
  * 3. Potentially malformed JSON due to HTML encoding
  */
 
-const { createCostcoProcessor } = require('../templates/costco-inline-routing');
-const { createUiPathQueueClient } = require('../shared/uipath-queue-client');
+const { createCostcoProcessor } = require('../../src/templates/costco-inline-routing');
+const { createUiPathQueueClient } = require('../../src/shared/uipath-queue-client');
 
 /**
  * HTML/Text cleaning utilities

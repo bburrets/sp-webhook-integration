@@ -3,9 +3,9 @@
  * Use this to verify queue item submission is working correctly
  */
 
-const { UiPathQueueClient } = require('../shared/uipath-queue-client');
-const { config } = require('../shared/config');
-const { createLogger } = require('../shared/logger');
+const { UiPathQueueClient } = require('../../../src/shared/uipath-queue-client');
+const { config } = require('../../../src/shared/config');
+const { createLogger } = require('../../../src/shared/logger');
 
 async function testQueueSubmission(queueName = null, testData = null) {
     const mockContext = {

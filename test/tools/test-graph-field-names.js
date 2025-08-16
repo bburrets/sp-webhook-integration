@@ -3,7 +3,7 @@
  */
 
 const axios = require('axios');
-const { getAccessToken } = require('../shared/auth');
+const { getAccessToken } = require('../../src/shared/auth');
 
 async function testGraphFieldNames() {
     console.log('Testing Graph API field names...\n');

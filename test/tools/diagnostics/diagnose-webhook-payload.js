@@ -31,7 +31,7 @@ async function diagnoseWebhookPayload() {
     };
     
     // Load the actual template processor
-    const { CostcoTemplateProcessor } = require('../templates/costco-inline-routing');
+    const { CostcoTemplateProcessor } = require('../../../src/templates/costco-inline-routing');
     
     // Create a mock logger to avoid initialization issues
     const mockLogger = {

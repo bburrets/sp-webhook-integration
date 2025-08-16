@@ -7,6 +7,13 @@ const { wrapHandler, validationError } = require('../shared/error-handler');
 const { validateWebhookNotification } = require('../shared/validators');
 const { createLogger } = require('../shared/logger');
 const { processUiPathNotification } = require('./uipath-dispatcher');
+const {
+    HTTP_STATUS,
+    HTTP_HEADERS,
+    CLIENT_STATE_PATTERNS,
+    ERROR_MESSAGES,
+    SUCCESS_MESSAGES
+} = require('../shared/constants');
 
 
 // Webhook endpoint to handle Microsoft Graph notifications
@@ -33,17 +40,17 @@ app.http('webhook-handler', {
             
             // Microsoft Graph requires exact 200 status and plain text response
             return {
-                status: 200,
+                status: HTTP_STATUS.OK,
                 headers: {
-                    'Content-Type': 'text/plain',
-                    'Cache-Control': 'no-cache'
+                    [HTTP_HEADERS.CONTENT_TYPE]: HTTP_HEADERS.CONTENT_TYPE_TEXT,
+                    [HTTP_HEADERS.CACHE_CONTROL]: HTTP_HEADERS.NO_CACHE
                 },
                 body: validationToken
             };
         }
 
         if (request.method === 'GET') {
-            throw validationError('Missing validation token');
+            throw validationError(ERROR_MESSAGES.MISSING_VALIDATION_TOKEN);
         }
 
         if (request.method === 'POST') {
@@ -79,12 +86,12 @@ app.http('webhook-handler', {
             });
             
             return {
-                status: 200,
-                body: 'Notifications processed successfully'
+                status: HTTP_STATUS.OK,
+                body: SUCCESS_MESSAGES.NOTIFICATION_PROCESSED
             };
         }
 
-        throw validationError('Method not allowed', { method: request.method });
+        throw validationError(ERROR_MESSAGES.METHOD_NOT_ALLOWED, { method: request.method });
     })
 });
 

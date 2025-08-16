@@ -3,7 +3,7 @@
  */
 
 // Import the config to access it
-const { COSTCO_CONFIG } = require('../templates/costco-inline-routing');
+const { COSTCO_CONFIG } = require('../../src/templates/costco-inline-routing');
 
 // Create a minimal test class with just the cleaning methods
 class TestProcessor {

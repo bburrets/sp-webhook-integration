@@ -3,7 +3,7 @@
  * This helps verify which version of the code is running
  */
 
-const { createCostcoProcessor } = require('../src/templates/costco-inline-routing');
+const { createCostcoProcessor } = require('../../../src/templates/costco-inline-routing');
 
 // Mock context for testing
 const mockContext = {

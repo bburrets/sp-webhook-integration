@@ -3,7 +3,7 @@
  * Validates that the configuration is properly structured and backward compatible
  */
 
-const config = require('../src/shared/config');
+const config = require('../../src/shared/config');
 
 function validateConfig() {
     console.log('🔍 Validating configuration structure...\n');

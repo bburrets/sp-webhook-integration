@@ -9,9 +9,9 @@ try {
 } catch (e) {
     // dotenv not available, continue without it
 }
-const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../shared/sharepoint-document-handler');
-const { createCostcoProcessor } = require('../templates/costco-inline-routing');
-const { createLogger } = require('../shared/logger');
+const { createDocumentHandler, DOCUMENT_STRATEGY } = require('../../src/shared/sharepoint-document-handler');
+const { createCostcoProcessor } = require('../../src/templates/costco-inline-routing');
+const { createLogger } = require('../../src/shared/logger');
 
 // Mock SharePoint list item with HTML document field
 const mockCostcoItem = {
