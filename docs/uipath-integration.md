@@ -35,8 +35,67 @@ The UiPath integration enables automatic processing of SharePoint list items thr
 
 ## Configuration
 
+### Prerequisites
+- ✅ Existing SharePoint webhook solution deployed
+- ✅ UiPath Orchestrator instance configured
+- ✅ Azure CLI access
+- ✅ Function App already running
+
+### Step 1: Create UiPath API Credentials
+
+#### Option A: Using External Application (Recommended)
+1. **In UiPath Orchestrator:**
+   ```
+   Admin → External Applications → Add Application
+   - Name: SharePoint-Webhook-Integration
+   - Application Type: Confidential application
+   - Redirect URL: https://localhost (not used but required)
+   ```
+
+2. **Copy the credentials:**
+   - App ID (Client ID)
+   - App Secret (Client Secret)
+   - Note your Tenant Name and Organization Unit
+
+#### Option B: Using API Access (Legacy)
+1. **In UiPath Orchestrator:**
+   ```
+   Admin → API Access → Add
+   - Name: SharePoint-Integration
+   - Scope: OR.Queues
+   ```
+
 ### Environment Variables
 
+#### Using Azure CLI to Configure Function App
+
+```bash
+# Set variables
+RESOURCE_GROUP="rg-sharepoint-webhooks"
+FUNCTION_APP="webhook-functions-sharepoint-002"
+
+# Add UiPath credentials as app settings
+az functionapp config appsettings set \
+  --name $FUNCTION_APP \
+  --resource-group $RESOURCE_GROUP \
+  --settings \
+    UIPATH_ORCHESTRATOR_URL="https://cloud.uipath.com/[your-account]/[your-tenant]/orchestrator_" \
+    UIPATH_TENANT_NAME="[your-tenant-name]" \
+    UIPATH_CLIENT_ID="[your-client-id]" \
+    UIPATH_CLIENT_SECRET="[your-client-secret]" \
+    UIPATH_ORGANIZATION_UNIT_ID="[your-folder-id]"
+
+# Optional: Add queue-specific settings
+az functionapp config appsettings set \
+  --name $FUNCTION_APP \
+  --resource-group $RESOURCE_GROUP \
+  --settings \
+    UIPATH_DEFAULT_QUEUE="SharePointChanges" \
+    UIPATH_TIMEOUT_MS="30000" \
+    UIPATH_RETRY_ATTEMPTS="3"
+```
+
+#### Manual Configuration
 Add these to your Function App configuration:
 
 ```bash
@@ -127,6 +186,79 @@ class YourTemplateProcessor {
   - `test=config` - Test configuration
   - `test=all` - Run all tests
 
+## Implementation
+
+### Step 1: Install Required Packages
+
+```bash
+cd sharepoint-webhooks
+npm install axios axios-retry
+```
+
+### Step 2: Test UiPath Authentication
+
+Create `src/utilities/test-uipath-auth.js`:
+
+```javascript
+const UiPathAuth = require('../shared/uipath-auth');
+
+async function testAuth() {
+    const mockContext = {
+        log: console.log,
+        log: { error: console.error }
+    };
+
+    try {
+        const auth = new UiPathAuth(mockContext);
+        const token = await auth.getAccessToken();
+        console.log('✅ Authentication successful!');
+        console.log('Token (first 20 chars):', token.substring(0, 20) + '...');
+    } catch (error) {
+        console.error('❌ Authentication failed:', error.message);
+    }
+}
+
+testAuth();
+```
+
+Run: `node src/utilities/test-uipath-auth.js`
+
+### Step 3: Test Queue Submission
+
+Create `src/utilities/test-uipath-queue.js`:
+
+```javascript
+const UiPathQueueClient = require('../shared/uipath-queue-client');
+
+async function testQueueSubmission() {
+    const mockContext = {
+        log: console.log,
+        log: { error: console.error }
+    };
+
+    const client = new UiPathQueueClient(mockContext);
+    
+    const testItem = {
+        Name: `Test_SharePoint_${Date.now()}`,
+        Priority: 'Normal',
+        SpecificContent: {
+            TestField: 'Test Value',
+            Timestamp: new Date().toISOString(),
+            Source: 'SharePoint Test'
+        }
+    };
+
+    try {
+        const result = await client.addQueueItem('YourQueueName', testItem);
+        console.log('✅ Queue item added successfully:', result);
+    } catch (error) {
+        console.error('❌ Failed to add queue item:', error.message);
+    }
+}
+
+testQueueSubmission();
+```
+
 ## Testing
 
 ### Manual Testing
@@ -153,6 +285,20 @@ class YourTemplateProcessor {
 3. Update the item's Status to "Send Generated Form"
 4. Monitor logs for processing results
 
+### Create Test Webhook
+
+```bash
+# Create a webhook with UiPath processor
+curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=YOUR_FUNCTION_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/fambrandsllc.sharepoint.com:/sites/YourSite:/lists/YOUR_LIST_ID",
+    "changeType": "updated",
+    "notificationUrl": "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-handler",
+    "clientState": "processor:uipath;queue:SharePointChanges;template:invoice"
+  }'
+```
+
 ## Monitoring and Troubleshooting
 
 ### Logs
@@ -170,16 +316,32 @@ The integration provides comprehensive logging with the following log levels:
    - Check UiPath credentials and permissions
    - Verify Orchestrator URL and tenant name
    - Ensure organization unit ID is correct
+   
+   ```bash
+   # Verify credentials are set
+   az functionapp config appsettings list \
+     --name webhook-functions-sharepoint-002 \
+     --resource-group rg-sharepoint-webhooks \
+     | grep UIPATH
+   ```
 
 2. **Queue Submission Failures**
    - Verify queue exists in UiPath Orchestrator
    - Check queue permissions
    - Validate data format and required fields
+   - Verify queue name exists in Orchestrator
+   - Check Organization Unit ID is correct
+   - Ensure queue is in the specified folder
 
 3. **Item Not Processed**
    - Verify clientState configuration
    - Check if item meets trigger conditions (status, required fields)
    - Review processor logic for specific templates
+
+4. **Token Expiry Issues**
+   - Token cache is per function instance
+   - Cold starts will require new token
+   - Monitor token acquisition in logs
 
 ### Performance Considerations
 
@@ -196,6 +358,56 @@ The integration provides comprehensive logging with the following log levels:
 - Input validation prevents injection attacks
 - Comprehensive error handling prevents information leakage
 
+## Configuration Reference
+
+### ClientState Format for UiPath Processing
+
+```
+processor:uipath;queue:[QueueName];template:[TemplateName];priority:[Priority]
+```
+
+Examples:
+- `processor:uipath;queue:InvoiceProcessing;template:invoice;priority:High`
+- `processor:uipath;queue:COSTCOTracking;template:costcoTracking`
+- `processor:uipath;queue:GeneralChanges;template:default`
+
+### Application Insights Monitoring
+
+```javascript
+// Add to uipath-dispatcher.js
+context.log.metric('UiPathQueueSubmission', 1, {
+    queueName: config.queueName,
+    template: config.template,
+    success: result.success
+});
+```
+
+### Query Application Insights
+
+```kusto
+// Successful UiPath submissions
+customMetrics
+| where name == "UiPathQueueSubmission"
+| where customDimensions.success == "true"
+| summarize count() by bin(timestamp, 1h), tostring(customDimensions.queueName)
+
+// Failed submissions
+traces
+| where message contains "Failed to add queue item"
+| project timestamp, message, customDimensions
+```
+
+## Production Checklist
+
+- [ ] UiPath credentials stored in Azure App Settings
+- [ ] Test authentication successful
+- [ ] Test queue submission successful
+- [ ] Error handling implemented
+- [ ] Logging configured
+- [ ] Retry logic enabled
+- [ ] Monitoring alerts set up
+- [ ] Documentation updated
+
 ## Future Enhancements
 
 - Support for additional SharePoint list types
@@ -203,3 +415,6 @@ The integration provides comprehensive logging with the following log levels:
 - Advanced retry strategies with exponential backoff
 - Integration with Azure Service Bus for reliable messaging
 - Support for UiPath process triggering (not just queue items)
+- Support for bulk queue item processing
+- Advanced filtering and routing rules
+- UI for configuring mappings

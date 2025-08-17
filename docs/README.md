@@ -30,21 +30,23 @@ Debug guides and common issues:
 
 ### 📦 UiPath Integration
 UiPath-specific documentation:
-- `COSTCO_INLINE_WEBHOOK_SETUP.md` - COSTCO webhook setup
-- `COSTCO_WEBHOOK_ACTIVE.md` - Active webhook configuration
-- `UIPATH_INTEGRATION_SIMPLIFIED.md` - Simplified UiPath integration
-- `UIPATH_WEBHOOK_INTEGRATION_PLAN.md` - UiPath webhook integration plan
+- `guides/COSTCO_INTEGRATION_GUIDE.md` - Complete COSTCO integration guide (consolidated)
 - `uipath-integration.md` - Comprehensive UiPath integration guide
 
 ### 📋 General Documentation
 - `ENHANCED_FEATURES_EXPLAINED.md` - Enhanced features overview
-- `WEBHOOK_SETUP_GUIDE.md` - General webhook setup
+- `guides/WEBHOOK_SETUP_GUIDE.md` - General webhook setup
+- `guides/VISITOR_ONBOARDING_GUIDE.md` - New visitor quick start guide
 
 ### 🗄️ Archive (`archive/`)
 Historical documentation and summaries:
 - `HTML_PAYLOAD_FIX_SUMMARY.md` - HTML payload fix history
 - `IMPROVEMENTS_SUMMARY.md` - System improvements summary
 - `SOLUTION_SUMMARY.md` - Solution development summary
+- `UIPATH_WEBHOOK_INTEGRATION_PLAN.md` - Original integration planning
+- `UIPATH_INTEGRATION_SIMPLIFIED.md` - Simplified guide (consolidated into main)
+- `COSTCO_INLINE_WEBHOOK_SETUP.md` - Original COSTCO setup (consolidated)
+- `COSTCO_WEBHOOK_ACTIVE.md` - Original active config (consolidated)
 
 ## Quick Start
 

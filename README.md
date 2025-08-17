@@ -293,7 +293,7 @@ sharepoint-webhooks/
 
 ### 🤖 UiPath Integration
 - **[UiPath Integration Guide](docs/uipath-integration.md)** - Complete UiPath setup and configuration
-- **[COSTCO Template Setup](docs/COSTCO_INLINE_WEBHOOK_SETUP.md)** - COSTCO-specific implementation
+- **[COSTCO Integration Guide](docs/guides/COSTCO_INTEGRATION_GUIDE.md)** - Complete COSTCO setup and configuration
 - **[Creating Custom Templates](docs/guides/VISITOR_ONBOARDING_GUIDE.md#option-b-create-custom-template)** - Build your own processors
 
 ### 📖 Advanced Topics
