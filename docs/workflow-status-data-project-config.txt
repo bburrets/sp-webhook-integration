@@ -1,0 +1,7 @@
+status_exists = true
+project_name = sp-webhook-integration
+project_type = software
+project_level = 3
+field_type = brownfield
+workflow_path = brownfield-level-3.yaml
+status_file_path = /Users/randel-macbook/Documents/codex-gpt/sp-webhook-integration/docs/bmm-workflow-status.md

@@ -1,0 +1,21 @@
+project_structure = {
+  "repository_type": "monolith",
+  "parts_count": 1,
+  "scan_level": "exhaustive",
+  "project_root": "/Users/randel-macbook/Documents/codex-gpt/sp-webhook-integration"
+}
+project_parts_metadata = [
+  {
+    "part_id": "core",
+    "root_path": "/Users/randel-macbook/Documents/codex-gpt/sp-webhook-integration",
+    "detected_project_type_id": "backend",
+    "detection_signals": [
+      "package.json declares Azure Functions runtime and Node.js 18",
+      "src/functions/* implements HTTP and timer-triggered handlers",
+      "shared/ directory provides middleware-style utilities"
+    ],
+    "primary_language": "JavaScript",
+    "frameworks": ["Azure Functions", "Axios"],
+    "notes": "Classified manually because project-types.csv registry not present in repo"
+  }
+]

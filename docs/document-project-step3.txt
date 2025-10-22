@@ -1,0 +1,135 @@
+technology_stack = [
+  {
+    "part_id": "core",
+    "language": "JavaScript (Node.js 18+)",
+    "runtime": "Azure Functions v4",
+    "frameworks": [
+      "Azure Functions HTTP & Timer triggers",
+      "Axios + axios-retry for outbound HTTP",
+      "@azure/data-tables for storage telemetry"
+    ],
+    "functions": [
+      {
+        "name": "webhook-handler",
+        "triggers": ["HTTP"],
+        "responsibilities": [
+          "Validates Microsoft Graph webhook notifications",
+          "Enriches payloads via SharePoint + Graph lookups",
+          "Routes downstream through EnhancedForwarder and UiPath dispatcher"
+        ]
+      },
+      {
+        "name": "subscription-manager",
+        "triggers": ["HTTP"],
+        "responsibilities": [
+          "Creates, renews, and deletes SharePoint webhook subscriptions",
+          "Coordinates queue registration details",
+          "Uses throttling safeguards before calling Microsoft Graph"
+        ]
+      },
+      {
+        "name": "webhook-sync",
+        "triggers": ["Timer (30m)", "HTTP"],
+        "responsibilities": [
+          "Reconciles SharePoint subscription list with Azure storage state",
+          "Backfills metadata for dashboard visibility",
+          "Integrates with EnhancedForwarder for downstream notifications"
+        ]
+      },
+      {
+        "name": "uipath-dispatcher",
+        "triggers": ["HTTP"],
+        "responsibilities": [
+          "Packages enriched SharePoint items for UiPath queues",
+          "Applies retry + DLQ logic through shared/uipath-queue-client",
+          "Persists queue telemetry via shared/metrics-collector"
+        ]
+      },
+      {
+        "name": "uipath-test",
+        "triggers": ["HTTP"],
+        "responsibilities": [
+          "Provides sandboxed payload submission into UiPath",
+          "Supports integration testing scenarios documented in docs/guides"
+        ]
+      },
+      {
+        "name": "initialize-item-states",
+        "triggers": ["HTTP"],
+        "responsibilities": [
+          "Seeds change-detection cache via shared/delta-tracker",
+          "Calls SharePoint REST API to capture baseline item versions"
+        ]
+      },
+      {
+        "name": "health-check",
+        "triggers": ["HTTP"],
+        "responsibilities": [
+          "Verifies downstream dependencies (Graph, SharePoint, UiPath endpoints)",
+          "Surfaces readiness info consumed by docs/troubleshooting"
+        ]
+      },
+      {
+        "name": "test-queue-submission",
+        "triggers": ["HTTP"],
+        "responsibilities": [
+          "Manual dispatch utility for validating queue payload contracts",
+          "Relies on shared/uipath-auth token caching"
+        ]
+      }
+    ],
+    "shared_modules": [
+      {
+        "file": "shared/constants.js",
+        "focus": "Central definitions for HTTP status codes, message templates, client-state rules."
+      },
+      {
+        "file": "shared/enhanced-forwarder.js",
+        "focus": "Fan-out proxy for forwarding enriched events to external HTTP targets with resiliency."
+      },
+      {
+        "file": "shared/graph-api.js",
+        "focus": "Microsoft Graph client wrappers including subscription endpoints and batching."
+      },
+      {
+        "file": "shared/sharepoint-document-handler.js",
+        "focus": "Transforms SharePoint item payloads into normalized data structures for downstream automation."
+      },
+      {
+        "file": "shared/uipath-queue-client.js",
+        "focus": "UiPath queue submission, retries, telemetry, and error normalization."
+      },
+      {
+        "file": "shared/logger.js",
+        "focus": "Structured logging with correlation IDs; surfaced in docs/troubleshooting/structured-logging-guide.md."
+      },
+      {
+        "file": "shared/validators.js",
+        "focus": "Input validation (client state, webhook schema) consumed by webhook-handler and subscription-manager."
+      }
+    ],
+    "supporting_utilities": [
+      "utilities/apply-html-fix.js – mitigates known SharePoint HTML payload issues",
+      "utilities/discover-costco-list.js – enumerates Costco-specific list metadata",
+      "utilities/auth-cache-monitor.js – inspects token caching state for UiPath authentication",
+      "utilities/monitoring-dashboard.js – exports operational metrics from storage/queue"
+    ],
+    "testing": [
+      "Jest-based suites in src/shared/__tests__ covering auth, logger, validators, error handling",
+      "Manual function exercises via utilities/test-*.js collection"
+    ],
+    "observations": [
+      "Project uses centralized configuration loader (shared/config.js) to hydrate secrets and endpoints.",
+      "Structured logging + metrics collector enable Azure Monitor integration.",
+      "Documentation backlog already covers deployment, troubleshooting, and UiPath setup in depth."
+    ]
+  }
+]
+architecture_template_matches = [
+  {
+    "part_id": "core",
+    "matched_template": null,
+    "reason": "architecture template registry (registry.csv) not present in repository; manual match pending.",
+    "candidate": "Azure Serverless Integration (monolith backend)"
+  }
+]

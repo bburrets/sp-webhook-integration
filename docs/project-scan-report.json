@@ -1,0 +1,124 @@
+{
+  "workflow": "document-project",
+  "workflow_mode": "initial_scan",
+  "scan_level": "exhaustive",
+  "repository_type": "monolith",
+  "resume_mode": false,
+  "project_root": "/Users/randel-macbook/Documents/codex-gpt/sp-webhook-integration",
+  "project_parts": [
+    {
+      "part_id": "core",
+      "root_path": "/Users/randel-macbook/Documents/codex-gpt/sp-webhook-integration",
+      "project_type_id": "backend",
+      "display_name": "Azure Functions backend",
+      "primary_language": "JavaScript",
+      "frameworks": ["Azure Functions", "Axios"],
+      "notes": "Classification derived manually; project-types.csv not present in repository."
+    }
+  ],
+  "project_types": [
+    {
+      "part_id": "core",
+      "project_type_id": "backend",
+      "display_name": "Azure Functions backend"
+    }
+  ],
+  "findings": {
+    "project_classification": "Monolith backend (Azure Functions) with 1 part covering all functions and shared utilities.",
+    "existing_docs_summary": "30 existing documentation assets located across root, config/, docs/api, docs/architecture, docs/guides, and docs/troubleshooting.",
+    "technology_summary": "Azure Functions backend (Node.js 18) with eight HTTP/timer bindings, extensive SharePoint + UiPath integration, and structured logging plus telemetry collectors.",
+    "api_count": 8,
+    "data_model_tables": 3,
+    "async_components": [
+      "webhook-sync-timer",
+      "EnhancedForwarder retry queue",
+      "UiPath queue submissions"
+    ]
+  },
+  "completed_steps": [
+    {
+      "step": "step_1",
+      "status": "completed",
+      "timestamp": "2025-10-21T23:40:16Z",
+      "summary": "Classified as monolith with 1 part (backend)."
+    },
+    {
+      "step": "step_2",
+      "status": "completed",
+      "timestamp": "2025-10-21T23:43:10Z",
+      "summary": "Inventory captured 30 existing documentation files; user requested Git history evaluation."
+    },
+    {
+      "step": "step_3",
+      "status": "completed",
+      "timestamp": "2025-10-21T23:47:55Z",
+      "summary": "Mapped technology stack, function triggers, shared modules, and noted architecture template pending manual match."
+    },
+    {
+      "step": "step_4",
+      "status": "completed",
+      "timestamp": "2025-10-21T23:53:58Z",
+      "summary": "Generated API contracts, data models, and comprehensive analysis (8 endpoints, 3 data stores)."
+    },
+    {
+      "step": "step_5",
+      "status": "completed",
+      "timestamp": "2025-10-21T23:57:42Z",
+      "summary": "Authored source-tree-analysis.md and summarized five critical folders."
+    },
+    {
+      "step": "step_6",
+      "status": "completed",
+      "timestamp": "2025-10-22T00:01:09Z",
+      "summary": "Captured development instructions, deployment notes, and contribution guidelines."
+    },
+    {
+      "step": "step_7",
+      "status": "skipped",
+      "timestamp": "2025-10-22T00:02:30Z",
+      "summary": "Single-part project (monolith); integration architecture step not applicable."
+    },
+    {
+      "step": "step_8",
+      "status": "completed",
+      "timestamp": "2025-10-22T00:05:11Z",
+      "summary": "Generated architecture.md summarizing monolith serverless integration pattern."
+    },
+    {
+      "step": "step_9",
+      "status": "completed",
+      "timestamp": "2025-10-22T00:03:11Z",
+      "summary": "Generated project-overview, component inventory, development guide, and consolidated supporting docs."
+    },
+    {
+      "step": "step_10",
+      "status": "completed",
+      "timestamp": "2025-10-22T00:06:45Z",
+      "summary": "Created index.md consolidating generated and legacy documentation."
+    }
+  ],
+  "architecture_matches": [
+    {
+      "part_id": "core",
+      "matched_template": null,
+      "reason": "architecture template registry not present in repository; closest manual candidate is Azure serverless integration pattern."
+    }
+  ],
+  "outputs_generated": [
+    "docs/api-contracts-core.md",
+    "docs/data-models-core.md",
+    "docs/comprehensive-analysis-core.md",
+    "docs/source-tree-analysis.md",
+    "docs/development-instructions.md",
+    "docs/architecture.md",
+    "docs/project-overview.md",
+    "docs/component-inventory.md",
+    "docs/development-guide.md",
+    "docs/index.md"
+  ],
+  "current_step": "step_11",
+  "timestamps": {
+    "started": "2025-10-21T23:40:16Z",
+    "last_updated": "2025-10-22T00:06:45Z"
+  }
+}
