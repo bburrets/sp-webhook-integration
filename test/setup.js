@@ -15,6 +15,15 @@ process.env.WEBHOOK_LIST_ID = 'test-webhook-list-id';
 process.env.WEBSITE_SITE_NAME = 'test-function-app';
 process.env.WEBSITE_HOSTNAME = 'test-function-app.azurewebsites.net';
 
+// Mock UiPath settings
+process.env.UIPATH_ORCHESTRATOR_URL = 'https://test-orchestrator.uipath.com';
+process.env.UIPATH_TENANT_NAME = 'test-tenant';
+process.env.UIPATH_CLIENT_ID = 'test-uipath-client-id';
+process.env.UIPATH_CLIENT_SECRET = 'test-uipath-client-secret';
+process.env.UIPATH_ORGANIZATION_UNIT_ID = '12345';
+process.env.UIPATH_DEFAULT_QUEUE = 'TestQueue';
+process.env.UIPATH_ENABLED = 'true';
+
 // Global test utilities
 global.testHelpers = {
     // Create mock Azure Functions context
