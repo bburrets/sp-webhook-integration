@@ -289,7 +289,8 @@ async function fetchSharePointItem(resource, resourceData, context) {
         } else {
             // Try the SharePoint webhook format
             // Format: sites/domain.sharepoint.com:/sites/sitename:/lists/{list-id}
-            const webhookMatch = resource.match(/sites\/([^\/]+)\/lists\/([^\/]+)/);
+            // Use greedy match to capture full site path including nested /sites/
+            const webhookMatch = resource.match(/^sites\/(.+)\/lists\/([^\/]+)/);
             if (webhookMatch) {
                 [, siteId, listId] = webhookMatch;
                 // Get item ID from resourceData
