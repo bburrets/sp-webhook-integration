@@ -6,7 +6,7 @@ const { getAccessToken } = require('../shared/auth');
 const { wrapHandler, validationError } = require('../shared/error-handler');
 const { validateWebhookNotification } = require('../shared/validators');
 const { createLogger } = require('../shared/logger');
-const { processUiPathNotification } = require('./uipath-dispatcher');
+const { processNotification: processUiPathNotification } = require('./uipath-dispatcher-dynamic');
 const {
     HTTP_STATUS,
     HTTP_HEADERS,
@@ -71,12 +71,15 @@ app.http('webhook-handler', {
             // Validate the notification payload
             const validatedData = validateWebhookNotification(notifications);
 
-            // Process each validated notification
+            // Enrich notifications with stored clientState from SharePoint tracking list
+            const enrichedNotifications = await enrichNotificationsWithClientState(validatedData.value, context);
+
+            // Process each enriched notification
             logger.info('Processing webhook notifications', {
-                count: validatedData.value.length
+                count: enrichedNotifications.length
             });
-            
-            for (const notification of validatedData.value) {
+
+            for (const notification of enrichedNotifications) {
                 await processNotification(notification, context);
             }
             
@@ -161,7 +164,7 @@ async function processNotification(notification, context) {
         // Check if this notification should be routed to UiPath dispatcher
         if (clientState && shouldRouteToUiPath(clientState)) {
             try {
-                logger.info('Routing notification to UiPath dispatcher', {
+                logger.info('Routing notification to UiPath dynamic dispatcher', {
                     subscriptionId,
                     clientState
                 });
@@ -170,18 +173,18 @@ async function processNotification(notification, context) {
                 const uiPathResult = await routeToUiPathDispatcher(notification, context);
                 
                 if (uiPathResult.success) {
-                    logger.info('Successfully routed to UiPath dispatcher', {
+                    logger.info('Successfully routed to UiPath dynamic dispatcher', {
                         subscriptionId,
                         processed: uiPathResult.processed
                     });
                 } else {
-                    logger.error('UiPath dispatcher routing failed', { 
+                    logger.error('UiPath dynamic dispatcher routing failed', {
                         subscriptionId,
-                        error: uiPathResult.error 
+                        error: uiPathResult.error
                     });
                 }
             } catch (uiPathError) {
-                logger.error('Failed to route to UiPath dispatcher', {
+                logger.error('Failed to route to UiPath dynamic dispatcher', {
                     error: uiPathError.message,
                     subscriptionId
                 });
@@ -501,6 +504,88 @@ function parseClientState(clientState) {
 }
 
 /**
+ * Enrich notifications with stored clientState from SharePoint tracking list
+ * Microsoft Graph doesn't preserve clientState in webhook subscriptions,
+ * so we store it separately in SharePoint and retrieve it here.
+ * @param {Array} notifications - Array of webhook notifications
+ * @param {Object} context - Azure Functions context
+ * @returns {Promise<Array>} Enriched notifications with clientState
+ */
+async function enrichNotificationsWithClientState(notifications, context) {
+    const logger = createLogger(context);
+
+    try {
+        // Get access token
+        const accessToken = await getAccessToken(context);
+
+        // Get webhook tracking list configuration
+        const listId = config.sharepoint.lists.webhookManagement;
+        const sitePath = config.sharepoint.primarySite.sitePath;
+
+        // Fetch all tracking items from SharePoint
+        const trackingUrl = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items?$expand=fields&$select=id,fields`;
+        const response = await axios.get(trackingUrl, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json'
+            },
+            timeout: config.webhook.notificationTimeout
+        });
+
+        // Create a map of subscriptionId -> stored clientState
+        const clientStateMap = new Map();
+        if (response.data.value) {
+            for (const item of response.data.value) {
+                if (item.fields && item.fields.SubscriptionId) {
+                    const subscriptionId = item.fields.SubscriptionId;
+                    const storedClientState = item.fields.ClientState;
+                    if (storedClientState) {
+                        clientStateMap.set(subscriptionId, storedClientState);
+                    }
+                }
+            }
+        }
+
+        logger.debug('Loaded clientState mappings from SharePoint', {
+            trackingItemsFound: response.data.value?.length || 0,
+            clientStateMappings: clientStateMap.size
+        });
+
+        // Enrich each notification with stored clientState if available
+        const enrichedNotifications = notifications.map(notification => {
+            const storedClientState = clientStateMap.get(notification.subscriptionId);
+
+            if (storedClientState && !notification.clientState) {
+                logger.debug('Enriching notification with stored clientState', {
+                    subscriptionId: notification.subscriptionId,
+                    clientState: storedClientState
+                });
+
+                return {
+                    ...notification,
+                    clientState: storedClientState
+                };
+            }
+
+            // Return notification as-is if already has clientState or no stored value
+            return notification;
+        });
+
+        return enrichedNotifications;
+
+    } catch (error) {
+        logger.error('Failed to enrich notifications with clientState', {
+            error: error.message,
+            stack: error.stack
+        });
+
+        // Return original notifications if enrichment fails
+        // This ensures webhook processing continues even if lookup fails
+        return notifications;
+    }
+}
+
+/**
  * Check if notification should be routed to UiPath dispatcher
  * @param {string} clientState - Client state from notification
  * @returns {boolean} True if should route to UiPath
@@ -512,7 +597,7 @@ function shouldRouteToUiPath(clientState) {
 
     // Check for UiPath processor indicator in clientState
     const lowercaseState = clientState.toLowerCase();
-    return lowercaseState.includes('processor:uipath') || 
+    return lowercaseState.includes('processor:uipath') ||
            lowercaseState.includes('uipath:enabled') ||
            lowercaseState.includes('uipath=true') ||
            lowercaseState.includes('uipath:'); // Matches any UiPath queue specification
@@ -528,14 +613,14 @@ async function routeToUiPathDispatcher(notification, context) {
     try {
         const logger = createLogger(context);
         
-        logger.debug('Routing notification to UiPath dispatcher', {
+        logger.debug('Routing notification to UiPath dynamic dispatcher', {
             subscriptionId: notification.subscriptionId,
             resource: notification.resource,
             changeType: notification.changeType
         });
 
-        // Process notification using UiPath dispatcher logic
-        const result = await processUiPathNotification(notification, context);
+        // Process notification using UiPath dynamic dispatcher logic
+        const result = await processUiPathNotification(notification, context, logger);
         
         return {
             success: true,
@@ -545,11 +630,11 @@ async function routeToUiPathDispatcher(notification, context) {
         
     } catch (error) {
         const logger = createLogger(context);
-        logger.error('Error routing to UiPath dispatcher', {
+        logger.error('Error routing to UiPath dynamic dispatcher', {
             error: error.message,
             notification: notification
         });
-        
+
         return {
             success: false,
             error: error.message

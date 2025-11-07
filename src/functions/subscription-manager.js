@@ -104,12 +104,46 @@ async function createSubscription(accessToken, subscriptionData, context) {
         // Calculate expiration date (max 3 days for SharePoint webhooks)
         const expiration = expirationDateTime || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
 
+        // Build clientState - either from UiPath params or use provided/default
+        let clientState;
+        if (subscriptionData.uipath) {
+            // Auto-construct clientState from UiPath parameters
+            const uipathConfig = subscriptionData.uipath;
+            const tenant = uipathConfig.tenant || config.uipath?.tenantName || 'PROD';
+            const folder = uipathConfig.folder || uipathConfig.organizationUnitId || config.uipath?.organizationUnitId;
+            const queue = uipathConfig.queue || config.uipath?.defaultQueue;
+            const processor = uipathConfig.processor || 'document'; // default to document processor
+            const configName = uipathConfig.configName || 'WebhookIntegration';
+
+            if (!queue) {
+                throw validationError('UiPath queue name is required when using uipath configuration');
+            }
+
+            // Construct clientState in expected format
+            const parts = [
+                'processor:uipath',
+                `processor:${processor}`,
+                `uipath:${queue}`
+            ];
+
+            if (tenant) parts.push(`env:${tenant}`);
+            if (folder) parts.push(`folder:${folder}`);
+            parts.push(`config:${configName}`);
+
+            clientState = parts.join(';');
+
+            context.log('Auto-constructed UiPath clientState:', clientState);
+        } else {
+            // Use provided clientState or default
+            clientState = subscriptionData.clientState || config.webhook.defaultClientState;
+        }
+
         const subscription = {
             changeType: changeType,
             notificationUrl: notificationUrl,
             resource: resource,
             expirationDateTime: expiration,
-            clientState: subscriptionData.clientState || config.webhook.defaultClientState
+            clientState: clientState
         };
 
         context.log('Creating subscription:', subscription);

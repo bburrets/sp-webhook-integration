@@ -151,12 +151,14 @@ class UiPathQueueClient {
                 encodedKey = fieldMappings[key];
             } else {
                 encodedKey = key
+                    .replace(/@/g, '_x0040_')  // At symbol (must be first to avoid double-encoding)
                     .replace(/ /g, '_x0020_')  // Space
-                    .replace(/_/g, '_x005f_')  // Underscore (only if not already encoded)
                     .replace(/&/g, '_x0026_')  // Ampersand
                     .replace(/'/g, '_x0027_')  // Apostrophe
                     .replace(/\(/g, '_x0028_')  // Left parenthesis
-                    .replace(/\)/g, '_x0029_'); // Right parenthesis
+                    .replace(/\)/g, '_x0029_')  // Right parenthesis
+                    .replace(/\./g, '_x002E_')  // Period/dot
+                    .replace(/:/g, '_x003A_');  // Colon
             }
 
             encoded[encodedKey] = value;
@@ -367,7 +369,7 @@ class UiPathQueueClient {
                 priority: queueItemPayload.itemData.Priority,
                 reference: queueItemPayload.itemData.Reference,
                 hasSpecificContent: !!queueItemPayload.itemData.SpecificContent,
-                specificContentKeys: queueItemPayload.itemData.SpecificContent ? 
+                specificContentKeys: queueItemPayload.itemData.SpecificContent ?
                     Object.keys(queueItemPayload.itemData.SpecificContent) : []
             });
 
@@ -395,9 +397,9 @@ class UiPathQueueClient {
                     queueName: queueItemPayload.itemData?.Name,
                     priority: queueItemPayload.itemData?.Priority,
                     hasSpecificContent: !!queueItemPayload.itemData?.SpecificContent,
-                    specificContentKeys: queueItemPayload.itemData?.SpecificContent ? 
+                    specificContentKeys: queueItemPayload.itemData?.SpecificContent ?
                         Object.keys(queueItemPayload.itemData.SpecificContent).slice(0, 10) : [],
-                    specificContentSample: queueItemPayload.itemData?.SpecificContent ? 
+                    specificContentSample: queueItemPayload.itemData?.SpecificContent ?
                         JSON.stringify(queueItemPayload.itemData.SpecificContent).substring(0, 200) : null
                 }
             });
