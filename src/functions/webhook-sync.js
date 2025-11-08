@@ -179,13 +179,21 @@ async function syncToSharePoint(accessToken, sitePath, listId, webhooks, context
 
             try {
                 if (existingItem) {
-                    // Preserve existing ClientState and ForwardingUrl if they exist
-                    if (existingItem.fields.ClientState && existingItem.fields.ClientState.startsWith('forward:')) {
+                    // ALWAYS preserve existing ClientState if it exists
+                    // Microsoft Graph doesn't preserve clientState, but we store it in SharePoint
+                    // This includes UiPath routing configs (processor:uipath...) and forwarding configs (forward:...)
+                    if (existingItem.fields.ClientState) {
                         itemData.fields.ClientState = existingItem.fields.ClientState;
-                        itemData.fields.ForwardingUrl = existingItem.fields.ForwardingUrl;
-                        itemData.fields.IsProxy = existingItem.fields.IsProxy;
+
+                        // Also preserve forwarding-specific fields if set
+                        if (existingItem.fields.ForwardingUrl) {
+                            itemData.fields.ForwardingUrl = existingItem.fields.ForwardingUrl;
+                        }
+                        if (existingItem.fields.IsProxy) {
+                            itemData.fields.IsProxy = existingItem.fields.IsProxy;
+                        }
                     }
-                    
+
                     // Update existing item
                     await updateSharePointListItem(accessToken, sitePath, listId, existingItem.id, itemData, context);
                     results.updated++;
