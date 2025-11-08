@@ -555,7 +555,9 @@ async function enrichNotificationsWithClientState(notifications, context) {
         const enrichedNotifications = notifications.map(notification => {
             const storedClientState = clientStateMap.get(notification.subscriptionId);
 
-            if (storedClientState && !notification.clientState) {
+            // Always use stored clientState if we have one
+            // Microsoft Graph sends empty string "" which is truthy in JS
+            if (storedClientState) {
                 logger.debug('Enriching notification with stored clientState', {
                     subscriptionId: notification.subscriptionId,
                     clientState: storedClientState
@@ -567,7 +569,7 @@ async function enrichNotificationsWithClientState(notifications, context) {
                 };
             }
 
-            // Return notification as-is if already has clientState or no stored value
+            // Return notification as-is if no stored clientState found
             return notification;
         });
 
