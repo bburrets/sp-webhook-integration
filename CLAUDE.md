@@ -90,10 +90,19 @@ UIPATH_ORGANIZATION_UNIT_ID=376892
 
 ## Important Notes
 
-- Webhooks auto-renew via timer function (runs hourly)
+- **Webhooks auto-renew**: Timer function runs hourly and renews webhooks expiring within 24 hours
+  - Renewal extends expiration by 3 days (max allowed for SharePoint)
+  - Failed renewals are logged and require manual intervention
+  - Manual renewal: Trigger `/api/webhook-sync` endpoint
 - Same client credentials work for both Dev and Prod
 - Always restart Function App after config changes
 - Function keys may rotate - check Azure Portal if auth fails
+
+### Webhook Lifecycle
+- **Created**: 3-day expiration
+- **Auto-renewal**: Triggered when < 24 hours remain
+- **After renewal**: New 3-day expiration from renewal time
+- **If renewal fails**: Webhook expires and stops receiving notifications
 
 ---
 

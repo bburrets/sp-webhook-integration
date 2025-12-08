@@ -10,9 +10,9 @@ const { UIPATH_PRIORITY } = require('./constants');
 
 // Dynamic UiPath Queue Client
 class DynamicUiPathQueueClient {
-    constructor(context = null) {
+    constructor(context = null, configOverrides = null) {
         this.logger = createLogger(context);
-        this.baseClient = createUiPathQueueClient(context);
+        this.baseClient = createUiPathQueueClient(context, configOverrides);
     }
 
     /**
@@ -111,8 +111,8 @@ class DynamicUiPathQueueClient {
     }
 }
 
-function createDynamicUiPathQueueClient(context) {
-    return new DynamicUiPathQueueClient(context);
+function createDynamicUiPathQueueClient(context, configOverrides = null) {
+    return new DynamicUiPathQueueClient(context, configOverrides);
 }
 
 module.exports = {

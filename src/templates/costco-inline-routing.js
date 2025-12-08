@@ -66,9 +66,9 @@ const COSTCO_CONFIG = {
  * COSTCO Template Processor
  */
 class CostcoTemplateProcessor {
-    constructor(context = null) {
+    constructor(context = null, configOverrides = null) {
         this.logger = createLogger(context);
-        this.queueClient = createUiPathQueueClient(context);
+        this.queueClient = createUiPathQueueClient(context, configOverrides);
         this.documentHandler = createDocumentHandler(context);
         this.context = context;
     }
@@ -674,8 +674,8 @@ class CostcoTemplateProcessor {
  * @param {Object} context - Azure Functions context
  * @returns {CostcoTemplateProcessor} Template processor instance
  */
-function createCostcoProcessor(context = null) {
-    return new CostcoTemplateProcessor(context);
+function createCostcoProcessor(context = null, configOverrides = null) {
+    return new CostcoTemplateProcessor(context, configOverrides);
 }
 
 /**

@@ -23,17 +23,30 @@ const tokenCache = new Map();
  * UiPath Authentication Client
  */
 class UiPathAuth {
-    constructor(context = null) {
+    constructor(context = null, configOverrides = null) {
         this.logger = createLogger(context);
-        this.orchestratorUrl = config.uipath.orchestratorUrl;
-        this.tenantName = config.uipath.tenantName;
-        this.clientId = config.uipath.clientId;
-        this.clientSecret = config.uipath.clientSecret;
-        this.organizationUnitId = config.uipath.organizationUnitId;
-        
+
+        // Apply configuration overrides for multi-environment support
+        const effectiveConfig = configOverrides || config.uipath;
+
+        this.orchestratorUrl = effectiveConfig.orchestratorUrl || config.uipath.orchestratorUrl;
+        this.tenantName = effectiveConfig.tenantName || config.uipath.tenantName;
+        this.clientId = effectiveConfig.clientId || config.uipath.clientId;
+        this.clientSecret = effectiveConfig.clientSecret || config.uipath.clientSecret;
+        this.organizationUnitId = effectiveConfig.organizationUnitId || config.uipath.organizationUnitId;
+
+        // Log environment configuration if overrides are provided
+        if (configOverrides) {
+            this.logger.info('Using custom UiPath environment configuration', {
+                tenantName: this.tenantName,
+                organizationUnitId: this.organizationUnitId,
+                orchestratorUrl: this.orchestratorUrl
+            });
+        }
+
         // Validate required configuration
         this.validateConfig();
-        
+
         // Configure axios instance
         this.httpClient = axios.create({
             baseURL: this.orchestratorUrl,
@@ -398,10 +411,11 @@ class UiPathAuth {
 /**
  * Create UiPath authentication client
  * @param {Object} context - Azure Functions context
+ * @param {Object} configOverrides - Optional configuration overrides for multi-environment support
  * @returns {UiPathAuth} Authentication client instance
  */
-function createUiPathAuth(context = null) {
-    return new UiPathAuth(context);
+function createUiPathAuth(context = null, configOverrides = null) {
+    return new UiPathAuth(context, configOverrides);
 }
 
 module.exports = {

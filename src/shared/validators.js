@@ -62,8 +62,11 @@ function validateWebhookNotification(data) {
         }
 
         // Optional but validated fields
-        if (notification.clientState !== undefined && typeof notification.clientState !== 'string') {
-            throw validationError(`Invalid notification at index ${i}: clientState must be a string`, {
+        // Allow null for clientState - it will be enriched from tracking list
+        if (notification.clientState !== undefined &&
+            notification.clientState !== null &&
+            typeof notification.clientState !== 'string') {
+            throw validationError(`Invalid notification at index ${i}: clientState must be a string or null`, {
                 received: typeof notification.clientState
             });
         }

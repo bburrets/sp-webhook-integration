@@ -188,3 +188,24 @@ curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/ini
 3. **Validate Payloads**: Implement validation on your receiving endpoints
 4. **Monitor Access**: Use Application Insights to monitor webhook usage
 5. **Implement Rate Limiting**: Protect your endpoints from notification floods
+
+---
+
+## 📚 Additional Documentation
+
+### UiPath Integration
+For setting up webhooks that send items to UiPath queues, see:
+- **[Complete Webhook to Queue Guide](./WEBHOOK_TO_QUEUE_COMPLETE_GUIDE.md)** - Comprehensive guide for UiPath integration
+- **[Quick Start: Document Processor](./QUICK_START_DOCUMENT_PROCESSOR.md)** - Fast setup for document processing
+
+### Production Deployment
+- **[Production Scaling Guide](./PRODUCTION_SCALING_GUIDE.md)** - Enterprise scaling strategies
+- **[Deployment Guide](./DEPLOYMENT_GUIDE.md)** - Azure deployment procedures
+
+### Reference Documentation
+- **[Documentation Index](./INDEX.md)** - Complete documentation hub
+- **[Function Reference](../api/FUNCTION_REFERENCE.md)** - API documentation
+
+---
+
+*Last Updated: November 2025 | Version 2.0*

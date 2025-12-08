@@ -101,8 +101,8 @@ registerProcessor({
         const resourceMatch = resource ? resource.toLowerCase().includes('costco') : false;
         return tokenMatch || resourceMatch;
     },
-    factory: context => {
-        const processor = createCostcoProcessor(context);
+    factory: (context, configOverrides) => {
+        const processor = createCostcoProcessor(context, configOverrides);
         return {
             name: 'costco-inline-routing',
             process: async ({ item, previousItem, queueName, accessToken }) =>

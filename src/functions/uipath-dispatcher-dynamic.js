@@ -12,6 +12,7 @@ const { validateWebhookNotification } = require('../shared/validators');
 const { createLogger } = require('../shared/logger');
 const { getAccessToken } = require('../shared/auth');
 const { resolveProcessor, parseClientState } = require('../shared/uipath-processor-registry');
+const { getEnvironmentConfig } = require('../shared/uipath-environment-config');
 const {
     shouldProcessForUiPath,
     fetchSharePointItem
@@ -110,7 +111,15 @@ async function processNotification(notification, context, logger) {
         };
     }
 
-    const processor = descriptor.factory(context);
+    // Extract environment configuration from clientState
+    const envConfig = getEnvironmentConfig(clientState, context);
+    logger.info('Using UiPath environment configuration', {
+        tenantName: envConfig.tenantName,
+        folder: envConfig.organizationUnitId,
+        environment: envConfig.environment || 'DEFAULT'
+    });
+
+    const processor = descriptor.factory(context, envConfig);
     const queueName = extractQueueName(clientState);
     const clientStateTokens = parseClientState(clientState);
 

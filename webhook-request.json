@@ -1,0 +1,6 @@
+{
+  "resource": "sites/fambrandsllc.sharepoint.com:/sites/Accounting_Research:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215",
+  "changeType": "updated",
+  "notificationUrl": "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-handler",
+  "clientState": "forward:https://webhook.site/048c806a-2366-473d-8998-20f23699e11e;mode:withChanges;detectChanges:true"
+}

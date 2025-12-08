@@ -13,9 +13,23 @@ const { createDynamicUiPathQueueClient } = require('../shared/uipath-dynamic-que
 
 // Generic Document Processor Template
 class GenericDocumentProcessor {
-    constructor(context = null, options = {}) {
+    constructor(context = null, configOverrides = null) {
         this.logger = createLogger(context);
-        this.queueClient = createDynamicUiPathQueueClient(context);
+
+        // Support both old signature (context, options) and new (context, configOverrides)
+        // If configOverrides looks like options (has includeFields, excludeFields, etc), treat it as options
+        const isOptions = configOverrides && (
+            configOverrides.includeFields ||
+            configOverrides.excludeFields ||
+            configOverrides.defaultQueue ||
+            configOverrides.referencePrefix
+        );
+
+        const options = isOptions ? configOverrides : {};
+        const envConfig = isOptions ? null : configOverrides;
+
+        // Accept configOverrides for multi-environment support
+        this.queueClient = createDynamicUiPathQueueClient(context, envConfig);
         this.context = context;
         this.options = {
             defaultQueue: process.env.UIPATH_DEFAULT_QUEUE,

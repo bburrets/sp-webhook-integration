@@ -33,11 +33,23 @@ const QueueItemStatus = UIPATH_QUEUE_STATUS;
  * UiPath Queue Client
  */
 class UiPathQueueClient {
-    constructor(context = null) {
+    constructor(context = null, configOverrides = null) {
         this.logger = createLogger(context);
-        this.auth = createUiPathAuth(context);
-        this.defaultQueue = config.uipath.defaultQueue;
-        
+        this.auth = createUiPathAuth(context, configOverrides);
+
+        // Store config for later use
+        const effectiveConfig = configOverrides || config.uipath;
+        this.defaultQueue = effectiveConfig.defaultQueue || config.uipath.defaultQueue;
+        this.organizationUnitId = effectiveConfig.organizationUnitId || config.uipath.organizationUnitId;
+
+        // Log environment configuration if overrides are provided
+        if (configOverrides) {
+            this.logger.info('Using custom UiPath queue client configuration', {
+                organizationUnitId: this.organizationUnitId,
+                defaultQueue: this.defaultQueue
+            });
+        }
+
         // Validate UiPath is enabled
         if (!config.uipath.features.enabled) {
             this.logger.warn(ERROR_MESSAGES.UIPATH_DISABLED, {
@@ -388,7 +400,7 @@ class UiPathQueueClient {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-UIPATH-OrganizationUnitId': config.uipath.organizationUnitId,
+                    'X-UIPATH-OrganizationUnitId': this.organizationUnitId,
                     'Authorization': '[REDACTED]'
                 },
                 payloadStructure: {
@@ -417,7 +429,7 @@ class UiPathQueueClient {
                 {
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-UIPATH-OrganizationUnitId': config.uipath.organizationUnitId
+                        'X-UIPATH-OrganizationUnitId': this.organizationUnitId
                     },
                     timeout: config.uipath.api.timeout
                 }
@@ -727,8 +739,8 @@ class UiPathQueueClient {
  * @param {Object} context - Azure Functions context
  * @returns {UiPathQueueClient} Queue client instance
  */
-function createUiPathQueueClient(context = null) {
-    return new UiPathQueueClient(context);
+function createUiPathQueueClient(context = null, configOverrides = null) {
+    return new UiPathQueueClient(context, configOverrides);
 }
 
 module.exports = {
