@@ -3,7 +3,7 @@
 ## Table of Contents
 1. [Overview](#overview)
 2. [Architecture](#architecture)
-3. [Processor Types](#processor-types)
+3. [Handler Types](#handler-types)
 4. [Setup Process](#setup-process)
 5. [Production Scaling](#production-scaling)
 6. [Monitoring & Maintenance](#monitoring--maintenance)
@@ -13,13 +13,25 @@
 
 ## Overview
 
-This guide provides a comprehensive walkthrough for establishing webhook connections between SharePoint lists/libraries and UiPath Orchestrator queues. The system supports multiple processor types for different use cases and can scale to handle enterprise workloads.
+This guide provides a comprehensive walkthrough for establishing webhook connections between SharePoint lists/libraries and UiPath Orchestrator queues. The system supports multiple handler types for different use cases and can scale to handle enterprise workloads.
 
 ### Key Capabilities
 - **Real-time Processing**: SharePoint changes trigger immediate queue items
-- **Multiple Processors**: Document, COSTCO, and custom processors
+- **Multiple Handlers**: Document, COSTCO, and custom handlers
+- **Multi-Environment Support**: Route to DEV or PROD environments dynamically
 - **Flexible Routing**: Route to different queues based on content or metadata
 - **Production Ready**: Auto-renewal, monitoring, and error handling built-in
+
+### Understanding the Terminology
+
+| Term | Definition | Example |
+|------|------------|---------|
+| **Destination** | Where notifications route | `uipath`, `forward`, `none` |
+| **Handler** | Processing template for UiPath destination | `document`, `costco`, `custom` |
+| **Tenant** | UiPath environment identifier | `DEV`, `PROD` |
+| **Folder** | UiPath organization unit ID | `277500` (DEV), `376892` (PROD) |
+| **Queue** | Target UiPath Orchestrator queue name | `Invoice_Processing_Queue` |
+| **Label** | Human-readable webhook identifier | `AccountingInvoices` |
 
 ---
 
@@ -28,15 +40,18 @@ This guide provides a comprehensive walkthrough for establishing webhook connect
 ### System Flow
 
 ```
-SharePoint Change → Webhook Notification → Azure Function
+SharePoint Change → Webhook Notification → Azure Function (webhook-handler)
                                                ↓
-                                        Process & Route
+                                    Parse ClientState Configuration
                                                ↓
                             ┌──────────────────┼──────────────────┐
                             ↓                  ↓                  ↓
-                    Document Processor  COSTCO Processor   Custom Processor
+                    Document Handler    COSTCO Handler    Custom Handler
+                            ↓                  ↓                  ↓
+                    Extract Metadata    Validate Fields   Custom Logic
                             ↓                  ↓                  ↓
                          UiPath             UiPath            UiPath
+                      (DEV or PROD)      (DEV or PROD)     (DEV or PROD)
                          Queue              Queue             Queue
 ```
 
@@ -44,51 +59,97 @@ SharePoint Change → Webhook Notification → Azure Function
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
-| Webhook Handler | Receives notifications | `src/functions/webhook-handler.js` |
-| Processor Registry | Routes to appropriate processor | `src/shared/uipath-processor-registry.js` |
-| Document Processor | Handles document libraries | `src/templates/generic-document-processor.js` |
-| COSTCO Processor | COSTCO-specific workflow | `src/templates/costco-inline-routing.js` |
-| UiPath Client | Submits to Orchestrator | `src/shared/uipath-queue-client.js` |
+| **Webhook Handler** | Receives notifications from SharePoint | `src/functions/webhook-handler.js` |
+| **Processor Registry** | Routes to appropriate handler | `src/shared/uipath-processor-registry.js` |
+| **Document Handler** | Handles document libraries | `src/templates/generic-document-processor.js` |
+| **COSTCO Handler** | COSTCO-specific workflow | `src/templates/costco-inline-routing.js` |
+| **UiPath Queue Client** | Submits to Orchestrator with environment support | `src/shared/uipath-queue-client.js` |
+| **ClientState Parser** | Parses configuration (supports dual formats) | `src/shared/clientstate-parser.js` |
+
+### Configuration Format Evolution
+
+**New Format** (Current - Recommended):
+```
+destination:uipath|handler:document|queue:QueueName|tenant:PROD|folder:376892|label:MyWebhook
+```
+
+**Legacy Format** (Still Supported):
+```
+processor:uipath;processor:document;uipath:QueueName;env:PROD;folder:376892;config:MyWebhook
+```
+
+> **Note**: The system supports both formats through a dual-format parser for backward compatibility.
 
 ---
 
-## Processor Types
+## Handler Types
 
-### 1. Document Processor
+### 1. Document Handler
 
-**Purpose**: Process documents from SharePoint libraries with metadata extraction.
+**Purpose**: Process documents from SharePoint libraries with comprehensive metadata extraction.
 
-**Activation**: `processor:document` in clientState
+**Activation**: `handler:document` in clientState
+
+**Configuration Example**:
+```
+destination:uipath|handler:document|queue:Invoice_Queue|tenant:PROD|folder:376892|label:InvoiceProcessing
+```
 
 **Payload Structure**:
 ```json
 {
   "ItemId": "19",
   "Title": "Invoice_2025.pdf",
-  "WebUrl": "https://tenant.sharepoint.com/.../Invoice_2025.pdf",
+  "WebUrl": "https://tenant.sharepoint.com/sites/Finance/Documents/Invoice_2025.pdf",
   "FileName": "Invoice_2025.pdf",
   "FileSize": "959868",
   "ContentType": "Document",
   "Author": "user@company.com",
-  "Modified": "2025-11-13T01:34:50Z",
+  "Modified": "2025-12-10T01:34:50Z",
   "Created": "2025-07-16T23:00:20Z",
   "DocIcon": "pdf",
   "Version": "11.0",
+  "FileType": "pdf",
+  "ServerRedirectedEmbedUrl": "https://...",
+  "CheckoutUser": null,
+  "Editor": "user@company.com",
+  "_UIVersionString": "11.0",
+  "LinkFilename": "Invoice_2025.pdf",
+  "ItemChildCount": "0",
+  "FolderChildCount": "0"
   // ... 30+ additional metadata fields
 }
 ```
 
 **Example Use Cases**:
-- Invoice processing
-- Contract management
-- Document archival
-- Compliance documentation
+- **Invoice Processing**: Extract invoice metadata, route to accounting workflow
+- **Contract Management**: Process legal documents with version tracking
+- **Document Archival**: Automated compliance documentation
+- **Multi-Format Support**: PDF, Word, Excel, images, etc.
 
-### 2. COSTCO Processor
+**Customization Options**:
+```javascript
+// In src/templates/generic-document-processor.js
+const processor = new GenericDocumentProcessor(context, {
+  includeFields: ['Department', 'DocumentType', 'ApprovalStatus'],
+  excludeFields: ['_UIVersionString', '_ComplianceFlags'],
+  defaultQueue: 'Fallback_Queue',
+  referencePrefix: 'DOC'
+});
+```
 
-**Purpose**: Handle COSTCO-specific routing forms and workflows.
+---
 
-**Activation**: `processor:costco` or resource containing "costco"
+### 2. COSTCO Handler
+
+**Purpose**: Handle COSTCO-specific routing forms and workflows with validation.
+
+**Activation**: `handler:costco` in clientState (or legacy: resource containing "costco")
+
+**Configuration Example**:
+```
+destination:uipath|handler:costco|queue:COSTCO_Routing_Queue|tenant:PROD|folder:376892|label:COSTCOInline
+```
 
 **Required Fields**:
 - Ship To Email
@@ -108,17 +169,39 @@ SharePoint Change → Webhook Notification → Azure Function
   "Style": "PROD-12345",
   "PONumber": "PO-98765",
   "Priority": "High",
+  "TraffickingNumber": "TRF-2025-001",
+  "ShipmentDetails": "Standard shipping",
+  "SpecialInstructions": "Handle with care"
   // Additional COSTCO-specific fields
 }
 ```
 
-### 3. Generic/Custom Processor
+**Validation Logic**:
+```javascript
+// Automatic validation before queue submission
+if (!item.ShipToEmail || !item.ShipDate || !item.Style || !item.PONumber) {
+  throw new Error('Missing required fields for COSTCO processing');
+}
 
-**Purpose**: Flexible processor for custom business logic.
+if (item.Status !== 'Send Generated Form') {
+  // Skip processing - trigger condition not met
+  return { processed: false, reason: 'Status not ready' };
+}
+```
 
-**Activation**: Custom clientState patterns
+---
 
-**Configuration**: Define in processor registry
+### 3. Custom Handler
+
+**Purpose**: Flexible handler for custom business logic and workflows.
+
+**Activation**: `handler:custom` in clientState
+
+**Configuration**: Define in processor registry (`src/shared/uipath-processor-registry.js`)
+
+**Example Implementation**:
+
+See [Custom Processor Implementation](#custom-processor-implementation) section below for complete code.
 
 ---
 
@@ -127,21 +210,25 @@ SharePoint Change → Webhook Notification → Azure Function
 ### Prerequisites
 
 1. **Azure Resources**:
-   - Azure Function App (running)
-   - Application Insights (monitoring)
-   - Storage Account (state management)
+   - Azure Function App (deployed and running)
+   - Application Insights (monitoring configured)
+   - Azure Storage Account (for change detection)
 
 2. **SharePoint Access**:
    - Site/List permissions
-   - App registration with Graph API access
+   - App registration with Graph API access (`Sites.ReadWrite.All`)
 
 3. **UiPath Orchestrator**:
-   - Tenant access
-   - Client credentials
-   - Queue(s) created
-   - Folder/Organization Unit ID
+   - Tenant access (DEV and/or PROD)
+   - Client credentials (ID and secret)
+   - Queue(s) created in target folder(s)
+   - Folder/Organization Unit IDs:
+     - DEV: `277500` (Tenant: `FAMBrands_RPAOPS`)
+     - PROD: `376892` (Tenant: `FAMBrands_RPAOPS_PROD`)
 
 ### Step 1: Configure Environment Variables
+
+**Azure Function App Settings**:
 
 ```bash
 # Azure AD Configuration
@@ -153,193 +240,496 @@ AZURE_TENANT_ID=<YOUR_AZURE_TENANT_ID>
 SHAREPOINT_SITE_URL=https://tenant.sharepoint.com/sites/yoursite
 WEBHOOK_LIST_ID=82a105da-8206-4bd0-851b-d3f2260043f4
 
-# UiPath Configuration
+# UiPath Configuration (Default Environment)
 UIPATH_ORCHESTRATOR_URL=https://cloud.uipath.com/org/tenant/orchestrator_
-UIPATH_TENANT_NAME=YourTenant
+UIPATH_TENANT_NAME=FAMBrands_RPAOPS
 UIPATH_CLIENT_ID=your-client-id
-UIPATH_CLIENT_SECRET=your-client-secret
+UIPATH_CLIENT_SECRET=<YOUR_CLIENT_SECRET>
 UIPATH_ORGANIZATION_UNIT_ID=277500
 UIPATH_DEFAULT_QUEUE=Default_Queue
 UIPATH_ENABLED=true
+
+# Azure Storage (for change detection)
+AZURE_STORAGE_CONNECTION_STRING=<YOUR_CONNECTION_STRING>
 ```
+
+**Setting via Azure CLI**:
+```bash
+az functionapp config appsettings set \
+  --name <function-app> \
+  --resource-group <resource-group> \
+  --settings \
+    AZURE_CLIENT_ID="<value>" \
+    UIPATH_TENANT_NAME="FAMBrands_RPAOPS" \
+    UIPATH_ORGANIZATION_UNIT_ID="277500"
+```
+
+---
 
 ### Step 2: Identify Your SharePoint Resource
 
-```javascript
-// Run discovery script to find your list/library
+Use the discovery script to find your list/library resource path:
+
+```bash
+# Run discovery (requires environment variables set)
 node discover-sharepoint-resources.js
 ```
 
 **Example Output**:
 ```
 📋 Available Lists/Libraries:
-1. Documents
+
+1. Invoice Documents
    ID: 1073e81c-e8ea-483c-ac8c-680148d9e215
-   Resource: sites/tenant.sharepoint.com:/sites/site:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215
+   Resource: sites/tenant.sharepoint.com:/sites/Finance:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215
+   Type: Document Library
+   Item Count: 1,245
+
+2. COSTCO Routing Forms
+   ID: a347ee9b-51b8-4ae2-bdb3-ebdfae5683ae
+   Resource: sites/tenant.sharepoint.com:/sites/DWI/COSTCO:/lists/a347ee9b-51b8-4ae2-bdb3-ebdfae5683ae
+   Type: List
+   Item Count: 89
 ```
 
-### Step 3: Create Webhook with Processor
+---
 
-#### For Document Processing:
+### Step 3: Create Webhook with Handler
+
+#### Example 1: Document Processing (DEV)
+
 ```bash
-curl -X POST "https://your-function.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
+curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/tenant.sharepoint.com:/sites/site:/lists/LIST_ID",
+    "resource": "sites/tenant.sharepoint.com:/sites/Finance:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215",
     "changeType": "updated",
-    "notificationUrl": "https://your-function.azurewebsites.net/api/webhook-handler",
-    "clientState": "processor:uipath;processor:document;uipath:Invoice_Queue;env:PROD;folder:277500"
+    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
+    "clientState": "destination:uipath|handler:document|queue:Invoice_Processing_Test|tenant:DEV|folder:277500|label:InvoicesDev"
   }'
 ```
 
-#### For COSTCO Processing:
+**What This Does**:
+1. Monitors SharePoint document library for changes
+2. Routes to **document handler**
+3. Submits to `Invoice_Processing_Test` queue
+4. Uses **DEV environment** (tenant: FAMBrands_RPAOPS, folder: 277500)
+5. Labels webhook as "InvoicesDev" for tracking
+
+#### Example 2: COSTCO Processing (PROD)
+
 ```bash
-curl -X POST "https://your-function.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
+curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/tenant.sharepoint.com:/sites/site:/lists/LIST_ID",
+    "resource": "sites/tenant.sharepoint.com:/sites/DWI/COSTCO:/lists/a347ee9b-51b8-4ae2-bdb3-ebdfae5683ae",
     "changeType": "updated",
-    "notificationUrl": "https://your-function.azurewebsites.net/api/webhook-handler",
-    "clientState": "processor:uipath;processor:costco;uipath:COSTCO_Queue;env:PROD"
+    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
+    "clientState": "destination:uipath|handler:costco|queue:COSTCO_Routing_Queue|tenant:PROD|folder:376892|label:COSTCOInline"
   }'
 ```
+
+**What This Does**:
+1. Monitors COSTCO routing forms
+2. Routes to **COSTCO handler**
+3. Validates required fields (Ship To Email, Ship Date, Style, PO Number)
+4. Only processes when Status = "Send Generated Form"
+5. Submits to `COSTCO_Routing_Queue` in **PROD environment**
+
+#### Example 3: Custom Handler with Conditions
+
+```bash
+curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/tenant.sharepoint.com:/sites/Finance:/lists/accounting-research-id",
+    "changeType": "updated",
+    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
+    "clientState": "destination:uipath|handler:custom|queue:Accounting_Research_Queue|tenant:PROD|folder:376892|label:AccountingResearch"
+  }'
+```
+
+> **Note**: Requires custom handler implementation. See [Custom Processor Implementation](#custom-processor-implementation).
+
+---
 
 ### Step 4: Verify Webhook is Active
 
 ```bash
 # List active subscriptions
-curl "https://your-function.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" | jq '.'
+curl -X GET "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" \
+  -H "Accept: application/json" | jq '.'
 
-# Sync to tracking list
-curl -X POST "https://your-function.azurewebsites.net/api/webhook-sync?code=YOUR_KEY" -d '{}' | jq '.'
+# Sync to tracking list (also renews expiring webhooks)
+curl -X POST "https://<function-app>.azurewebsites.net/api/webhook-sync?code=<FUNCTION_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{}' | jq '.'
 ```
+
+**Response Example**:
+```json
+{
+  "subscriptions": [
+    {
+      "id": "16fb8419-87f8-4046-af0b-42def1c0ec0c",
+      "resource": "sites/tenant.sharepoint.com:/sites/Finance:/lists/...",
+      "clientState": "destination:uipath|handler:document|queue:Invoice_Queue|tenant:PROD|folder:376892|label:Invoices",
+      "expirationDateTime": "2025-12-13T04:40:17Z",
+      "description": "UiPath document processing: Invoice_Queue (PROD)"
+    }
+  ]
+}
+```
+
+---
 
 ### Step 5: Test the Flow
 
-1. **Make a change** in SharePoint (upload document or update item)
-2. **Monitor logs** in Application Insights
-3. **Check UiPath queue** for new items
+#### Testing Workflow:
+
+1. **Make a change** in SharePoint:
+   - For document handler: Upload a document
+   - For COSTCO handler: Update item with Status = "Send Generated Form"
+
+2. **Monitor Azure Function logs**:
+   ```bash
+   az webapp log tail --name <function-app> --resource-group <resource-group>
+   ```
+
+3. **Check UiPath queue**:
+   - Log into UiPath Orchestrator
+   - Navigate to specified environment (DEV or PROD)
+   - Check target queue for new items
+
+4. **Verify in Application Insights**:
+   ```kusto
+   traces
+   | where timestamp > ago(10m)
+   | where message contains "Successfully submitted item to UiPath queue"
+   | project timestamp, message, customDimensions
+   ```
 
 ---
 
 ## Production Scaling
 
-### Multiple Environments
+### Multiple Environments Strategy
+
+Configure webhooks to target specific UiPath environments independently of Function App defaults:
 
 ```javascript
-// Development
+// Webhook 1: Development Testing
 {
-  "clientState": "processor:uipath;processor:document;env:DEV;folder:277500;queue:Test_Queue"
+  "clientState": "destination:uipath|handler:document|queue:Test_Queue|tenant:DEV|folder:277500|label:TestInvoices"
 }
 
-// Staging
+// Webhook 2: Staging Validation
 {
-  "clientState": "processor:uipath;processor:document;env:STAGING;folder:376892;queue:Staging_Queue"
+  "clientState": "destination:uipath|handler:document|queue:Staging_Queue|tenant:DEV|folder:277500|label:StagingInvoices"
 }
 
-// Production
+// Webhook 3: Production Processing
 {
-  "clientState": "processor:uipath;processor:document;env:PROD;folder:428901;queue:Production_Queue"
+  "clientState": "destination:uipath|handler:document|queue:Production_Queue|tenant:PROD|folder:376892|label:ProdInvoices"
+}
+```
+
+**Environment Configuration Override**:
+The system dynamically creates UiPath clients based on webhook configuration:
+
+```javascript
+// src/shared/uipath-queue-client.js
+function createDynamicUiPathQueueClient(context, configOverrides = null) {
+  if (!configOverrides) {
+    // Use default environment variables
+    return new UiPathQueueClient(context);
+  }
+
+  // Override with webhook-specific environment
+  const envConfig = {
+    orchestratorUrl: getOrchestratorUrl(configOverrides.tenant),
+    tenantName: getTenantName(configOverrides.tenant),
+    organizationUnitId: configOverrides.folder,
+    clientId: process.env.UIPATH_CLIENT_ID,
+    clientSecret: process.env.UIPATH_CLIENT_SECRET
+  };
+
+  return new UiPathQueueClient(context, envConfig);
 }
 ```
 
 ### Multiple Queues Strategy
 
+#### By Document Type:
 ```javascript
-// Route by document type
+// Route invoices vs contracts to different queues
 {
-  "clientState": "processor:document;route:byType;invoice:Invoice_Queue;contract:Contract_Queue;default:General_Queue"
+  "clientState": "destination:uipath|handler:document|queue:Invoice_Queue|tenant:PROD|folder:376892|label:Invoices"
+}
+{
+  "clientState": "destination:uipath|handler:document|queue:Contract_Queue|tenant:PROD|folder:376892|label:Contracts"
+}
+```
+
+#### By Department:
+```javascript
+// Finance webhook
+{
+  "clientState": "destination:uipath|handler:document|queue:Finance_Queue|tenant:PROD|folder:376892|label:FinanceDocs"
 }
 
-// Route by department
+// HR webhook
 {
-  "clientState": "processor:document;route:byDept;finance:Finance_Queue;hr:HR_Queue;ops:Operations_Queue"
+  "clientState": "destination:uipath|handler:document|queue:HR_Queue|tenant:PROD|folder:376892|label:HRDocs"
+}
+
+// Operations webhook
+{
+  "clientState": "destination:uipath|handler:document|queue:Operations_Queue|tenant:PROD|folder:376892|label:OpsDocs"
 }
 ```
 
 ### High-Volume Considerations
 
-1. **Queue Throttling**:
-   ```javascript
-   // Implement rate limiting in uipath-queue-client.js
-   const RATE_LIMIT = 100; // items per minute
-   const BATCH_SIZE = 10;  // items per batch
-   ```
+#### 1. Queue Throttling
 
-2. **Parallel Processing**:
-   ```javascript
-   // Process multiple notifications concurrently
-   const promises = notifications.map(n => processNotification(n));
-   await Promise.all(promises);
-   ```
+Implement rate limiting to prevent overwhelming UiPath Orchestrator:
 
-3. **Error Recovery**:
-   ```javascript
-   // Implement dead letter queue
-   if (retryCount > MAX_RETRIES) {
-     await sendToDeadLetterQueue(notification);
-   }
-   ```
+```javascript
+// In uipath-queue-client.js
+const RATE_LIMIT = 100; // items per minute
+const BATCH_SIZE = 10;  // items per batch
+
+async addQueueItemWithThrottling(itemData) {
+  await this.rateLimiter.acquire();
+  return await this.addQueueItem(itemData);
+}
+```
+
+#### 2. Parallel Processing
+
+Process multiple notifications concurrently:
+
+```javascript
+// In webhook-handler.js
+const notifications = req.body.value || [];
+const promises = notifications.map(notification =>
+  processNotification(notification, context)
+);
+
+const results = await Promise.all(promises);
+```
+
+#### 3. Error Recovery
+
+Implement retry logic with exponential backoff:
+
+```javascript
+// In uipath-queue-client.js
+async addQueueItemWithRetry(itemData, maxRetries = 3) {
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      return await this.addQueueItem(itemData);
+    } catch (error) {
+      attempt++;
+      if (attempt >= maxRetries) {
+        await this.sendToDeadLetterQueue(itemData, error);
+        throw error;
+      }
+
+      const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+```
+
+---
 
 ### Custom Processor Implementation
 
+Create custom handlers for specific business logic:
+
 ```javascript
-// src/templates/custom-processor.js
-class CustomProcessor {
-  constructor(context) {
+// src/templates/custom-accounting-processor.js
+const { createLogger } = require('../shared/logging');
+const { createDynamicUiPathQueueClient } = require('../shared/uipath-queue-client');
+
+class CustomAccountingProcessor {
+  constructor(context, configOverrides = null) {
     this.logger = createLogger(context);
-    this.queueClient = createUiPathQueueClient(context);
+
+    // Accept configOverrides for multi-environment support
+    this.queueClient = createDynamicUiPathQueueClient(context, configOverrides);
   }
 
+  /**
+   * Determine if this item should be processed
+   */
   shouldProcessItem(item, previousItem) {
     // Custom trigger logic
-    return item.ApprovalStatus === 'Approved' &&
-           item.ProcessingStatus !== 'Completed';
+    const isApproved = item.ApprovalStatus === 'Approved';
+    const isHighValue = parseFloat(item.Amount || 0) > 10000;
+    const notAlreadyProcessed = item.ProcessingStatus !== 'Completed';
+
+    this.logger.info('Evaluating processing criteria', {
+      isApproved,
+      isHighValue,
+      notAlreadyProcessed,
+      itemId: item.ID
+    });
+
+    return isApproved && isHighValue && notAlreadyProcessed;
   }
 
+  /**
+   * Validate required fields before processing
+   */
   validateRequiredFields(item) {
-    const required = ['Department', 'Amount', 'Approver'];
+    const required = ['Department', 'Amount', 'Approver', 'RequestDate'];
     const missing = required.filter(field => !item[field]);
 
     if (missing.length > 0) {
-      throw new Error(`Missing fields: ${missing.join(', ')}`);
+      throw new Error(`Missing required fields: ${missing.join(', ')}`);
     }
+
+    // Validate data types
+    if (isNaN(parseFloat(item.Amount))) {
+      throw new Error('Amount must be a valid number');
+    }
+
+    this.logger.debug('Validation passed', { itemId: item.ID });
   }
 
+  /**
+   * Transform item data for queue payload
+   */
   transformItemData(item) {
+    const amount = parseFloat(item.Amount);
+
     return {
+      // Core fields
+      ItemId: item.ID,
       Department: item.Department,
-      Amount: parseFloat(item.Amount),
+      Amount: amount,
       Approver: item.Approver,
+      RequestDate: item.RequestDate,
       ApprovalDate: item.Modified,
-      Priority: item.Amount > 10000 ? 'High' : 'Normal'
+
+      // Calculated fields
+      Priority: amount > 50000 ? 'Critical' : amount > 10000 ? 'High' : 'Normal',
+      ProcessingType: this.determineProcessingType(item),
+
+      // Metadata
+      RequestedBy: item.Author,
+      LastModifiedBy: item.Editor,
+      SharePointUrl: item.WebUrl || `Item ${item.ID}`
     };
   }
 
-  async processItem(item, previousItem, queueName) {
-    if (!this.shouldProcessItem(item, previousItem)) {
-      return { processed: false, reason: 'Trigger conditions not met' };
+  /**
+   * Custom business logic for processing type
+   */
+  determineProcessingType(item) {
+    if (item.Department === 'Finance' && parseFloat(item.Amount) > 50000) {
+      return 'ExecutiveReview';
+    } else if (item.RequestType === 'Audit') {
+      return 'ComplianceCheck';
+    } else {
+      return 'StandardProcessing';
     }
+  }
 
-    this.validateRequiredFields(item);
-    const transformedData = this.transformItemData(item);
+  /**
+   * Main processing method
+   */
+  async processItem(item, previousItem, queueName, configOverrides = null) {
+    try {
+      // Check trigger conditions
+      if (!this.shouldProcessItem(item, previousItem)) {
+        this.logger.info('Skipping item - trigger conditions not met', {
+          itemId: item.ID,
+          status: item.ApprovalStatus,
+          amount: item.Amount
+        });
+        return {
+          processed: false,
+          reason: 'Trigger conditions not met'
+        };
+      }
 
-    const result = await this.queueClient.addQueueItem({
-      queueName: queueName || 'Custom_Queue',
-      itemData: transformedData,
-      priority: transformedData.Priority,
-      reference: `CUSTOM_${item.ID}_${Date.now()}`
-    });
+      // Validate required fields
+      this.validateRequiredFields(item);
 
-    return { processed: true, queueItemId: result.Id };
+      // Transform data
+      const transformedData = this.transformItemData(item);
+
+      // Submit to UiPath queue
+      const result = await this.queueClient.addQueueItem({
+        queueName: queueName || 'Accounting_Research_Queue',
+        itemData: transformedData,
+        priority: transformedData.Priority,
+        reference: `ACCT_${item.ID}_${Date.now()}`,
+        deferDate: null,
+        dueDate: this.calculateDueDate(transformedData.Priority)
+      });
+
+      this.logger.info('Successfully submitted to UiPath queue', {
+        itemId: item.ID,
+        queueItemId: result.Id,
+        queue: queueName,
+        priority: transformedData.Priority
+      });
+
+      return {
+        processed: true,
+        queueItemId: result.Id,
+        priority: transformedData.Priority
+      };
+
+    } catch (error) {
+      this.logger.error('Failed to process item', {
+        itemId: item.ID,
+        error: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate due date based on priority
+   */
+  calculateDueDate(priority) {
+    const now = new Date();
+    switch (priority) {
+      case 'Critical':
+        return new Date(now.getTime() + 24 * 60 * 60 * 1000); // 1 day
+      case 'High':
+        return new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // 3 days
+      default:
+        return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    }
   }
 }
 
-// Register the processor
+module.exports = CustomAccountingProcessor;
+```
+
+**Register the Custom Processor**:
+
+```javascript
+// src/shared/uipath-processor-registry.js
+const CustomAccountingProcessor = require('../templates/custom-accounting-processor');
+
+// Register custom processor
 registerProcessor({
-  name: 'custom-processor',
-  matches: ({ tokens }) => tokens.includes('processor:custom'),
-  factory: context => new CustomProcessor(context)
+  name: 'custom-accounting-processor',
+  description: 'Accounting research request processor with custom validation',
+  matches: ({ tokens }) => tokens.includes('handler:custom'),
+  factory: (context, configOverrides) => new CustomAccountingProcessor(context, configOverrides)
 });
 ```
 
@@ -349,73 +739,155 @@ registerProcessor({
 
 ### Key Metrics to Monitor
 
-1. **Webhook Health**:
-   - Active subscription count
-   - Expiration dates
-   - Renewal success rate
+#### 1. Webhook Health
+- **Active subscription count**: Should match expected webhooks
+- **Expiration dates**: Webhooks approaching expiration
+- **Renewal success rate**: Percentage of successful auto-renewals
 
-2. **Processing Metrics**:
-   - Notifications received/hour
-   - Queue items created/hour
-   - Error rate
-   - Average processing time
+**Application Insights Query**:
+```kusto
+traces
+| where message contains "Successfully renewed webhook"
+| summarize RenewalCount = count() by bin(timestamp, 1d)
+| render timechart
+```
 
-3. **UiPath Integration**:
-   - Authentication success rate
-   - Queue submission failures
-   - API response times
+#### 2. Processing Metrics
+- **Notifications received/hour**: Volume tracking
+- **Queue items created/hour**: Throughput measurement
+- **Error rate**: Failed processing attempts
+- **Average processing time**: Performance monitoring
+
+**Application Insights Query**:
+```kusto
+traces
+| where message contains "Successfully submitted item to UiPath queue"
+| extend queue = tostring(customDimensions.queue)
+| summarize SubmissionCount = count() by bin(timestamp, 1h), queue
+| render timechart
+```
+
+#### 3. UiPath Integration
+- **Authentication success rate**: Token acquisition reliability
+- **Queue submission failures**: API errors
+- **API response times**: Performance tracking
+- **Environment distribution**: DEV vs PROD usage
+
+**Application Insights Query**:
+```kusto
+traces
+| where message contains "UiPath" or message contains "queue"
+| where severityLevel >= 3
+| project timestamp, message, customDimensions
+| order by timestamp desc
+| limit 50
+```
 
 ### Application Insights Queries
 
+#### Processing Success by Handler:
 ```kusto
-// Successful queue submissions
 traces
-| where message contains "Successfully submitted item to UiPath queue"
-| summarize count() by bin(timestamp, 1h)
+| where message contains "Successfully submitted"
+| extend handler = tostring(customDimensions.handler)
+| summarize count() by handler, bin(timestamp, 1h)
+| render columnchart
+```
 
-// Processing errors
-traces
-| where severityLevel >= 3
-| where message contains "UiPath" or message contains "processor"
-| project timestamp, message, customDimensions
-
-// Average processing time
+#### Average Processing Time:
+```kusto
 traces
 | where message contains "Response 200"
 | extend duration = toint(customDimensions.duration)
-| summarize avg(duration), percentiles(duration, 50, 95, 99) by bin(timestamp, 1h)
+| summarize
+    avg_duration = avg(duration),
+    p50 = percentile(duration, 50),
+    p95 = percentile(duration, 95),
+    p99 = percentile(duration, 99)
+  by bin(timestamp, 1h)
+| render timechart
+```
+
+#### Failed Processing by Error Type:
+```kusto
+traces
+| where severityLevel >= 3
+| where message contains "Failed to process"
+| extend errorType = tostring(customDimensions.errorType)
+| summarize count() by errorType, bin(timestamp, 1d)
+| render barchart
 ```
 
 ### Maintenance Tasks
 
 #### Daily:
-- Check active webhook count
-- Review error logs
-- Monitor queue depths
+- ✅ Check active webhook count
+- ✅ Review error logs for critical failures
+- ✅ Monitor UiPath queue depths
+- ✅ Verify authentication tokens are refreshing
 
 #### Weekly:
-- Verify webhook expiration dates
-- Review processing metrics
-- Check authentication token refresh
+- ✅ Verify webhook expiration dates (should be auto-renewing)
+- ✅ Review processing metrics and trends
+- ✅ Check Azure Function App health
+- ✅ Validate environment configurations (DEV vs PROD)
 
 #### Monthly:
-- Rotate function keys
-- Update processor configurations
-- Performance analysis
+- ✅ Rotate Azure Function keys
+- ✅ Update processor configurations if needed
+- ✅ Performance analysis and optimization
+- ✅ Review and update documentation
 
 ### Auto-Renewal Configuration
 
-The system automatically renews webhooks every hour:
+The system automatically renews webhooks every hour via timer function:
 
 ```javascript
-// Timer function runs hourly
+// src/functions/webhook-sync-timer.js
 app.timer('webhook-sync-timer', {
-  schedule: '0 0 * * * *',
+  schedule: '0 0 * * * *', // Every hour at :00
   handler: async (myTimer, context) => {
-    await renewExpiringWebhooks();
-    await syncToTrackingList();
+    const logger = createLogger(context);
+
+    try {
+      // Get all active webhooks
+      const webhooks = await getActiveWebhooks();
+
+      // Renew webhooks expiring within 24 hours
+      const expiringWebhooks = webhooks.filter(webhook => {
+        const expirationDate = new Date(webhook.expirationDateTime);
+        const hoursUntilExpiration = (expirationDate - new Date()) / (1000 * 60 * 60);
+        return hoursUntilExpiration < 24;
+      });
+
+      logger.info(`Found ${expiringWebhooks.length} webhooks expiring within 24 hours`);
+
+      // Renew each webhook
+      for (const webhook of expiringWebhooks) {
+        await renewWebhook(webhook.id);
+        logger.info('Successfully renewed webhook', { subscriptionId: webhook.id });
+      }
+
+      // Sync to tracking list
+      await syncToTrackingList();
+
+    } catch (error) {
+      logger.error('Webhook sync timer failed', { error: error.message });
+    }
   }
 });
+```
+
+**Renewal Behavior**:
+- **Trigger**: Webhooks expiring within 24 hours
+- **New Expiration**: 3 days from renewal time (SharePoint maximum)
+- **Failed Renewals**: Logged to Application Insights, require manual intervention
+
+**Manual Renewal**:
+```bash
+curl -X POST "https://<function-app>.azurewebsites.net/api/webhook-sync?code=<FUNCTION_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
 ---
@@ -426,156 +898,322 @@ app.timer('webhook-sync-timer', {
 
 #### 1. Webhook Not Triggering
 
-**Symptoms**: Changes in SharePoint don't create notifications
+**Symptoms**: Changes in SharePoint don't create notifications.
 
-**Checks**:
+**Diagnostic Steps**:
 ```bash
-# Verify webhook is active
-curl "https://your-function.azurewebsites.net/api/subscription-manager?code=KEY"
+# 1. Verify webhook is active
+curl -X GET "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>"
 
-# Check tracking list sync
-curl -X POST "https://your-function.azurewebsites.net/api/webhook-sync?code=KEY" -d '{}'
+# 2. Check expiration date
+# Look for "expirationDateTime" in response
+
+# 3. Check tracking list sync
+curl -X POST "https://<function-app>.azurewebsites.net/api/webhook-sync?code=<FUNCTION_KEY>" -d '{}'
 ```
 
-**Solution**: Recreate webhook if expired
+**Solutions**:
+- If expired: Recreate webhook
+- If missing: Check SharePoint permissions (`Sites.ReadWrite.All`)
+- If active but not firing: Verify notification URL is accessible
+
+---
 
 #### 2. Queue Items Not Created
 
-**Symptoms**: Notifications received but no UiPath queue items
+**Symptoms**: Notifications received but no UiPath queue items appear.
 
-**Checks**:
-- Verify `processor:uipath` in clientState
-- Check UiPath credentials are valid
-- Confirm queue name exists in folder
-- Review trigger conditions in processor
+**Diagnostic Steps**:
 
-**Debug Logging**:
-```javascript
-// Add to processor
-this.logger.debug('Processing decision', {
-  shouldProcess: this.shouldProcessItem(item),
-  item: item,
-  triggerField: item.Status
-});
-```
+1. **Verify Configuration**:
+   ```bash
+   curl "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" | jq '.subscriptions[].clientState'
+   ```
+   Check for `destination:uipath` in output.
+
+2. **Check Handler Trigger Conditions**:
+   - **Document handler**: Processes all changes
+   - **COSTCO handler**: Requires `Status = "Send Generated Form"`
+   - **Custom handler**: Check implementation-specific conditions
+
+3. **Verify Queue Exists**:
+   ```bash
+   # Check UiPath Orchestrator
+   # Navigate to: Tenant > Folder > Queues
+   # Verify queue name matches exactly
+   ```
+
+4. **Check Environment Configuration**:
+   ```bash
+   az functionapp config appsettings list \
+     --name <function-app> \
+     --resource-group <resource-group> \
+     --query "[?name=='UIPATH_TENANT_NAME'].value"
+   ```
+
+**Solutions**:
+- Update clientState with correct `destination:uipath|handler:...`
+- Verify trigger conditions are met (e.g., Status field)
+- Create missing queue in UiPath Orchestrator
+- Correct `tenant:` and `folder:` parameters
+
+---
 
 #### 3. Wrong Processor Activated
 
-**Symptoms**: Items processed by wrong template
+**Symptoms**: Items processed by wrong handler template.
 
-**Solution**: Check processor registration order and matching logic:
+**Cause**: Processor matching logic priority issue.
+
+**Solution**: Check processor registration order in `uipath-processor-registry.js`:
+
 ```javascript
 // More specific patterns should be registered first
-registerProcessor(costcoProcessor);    // Specific
-registerProcessor(documentProcessor);  // General
+registerProcessor(costcoProcessor);    // Specific: matches handler:costco
+registerProcessor(documentProcessor);  // General: matches handler:document
+registerProcessor(customProcessor);    // Specific: matches handler:custom
 ```
+
+**Debug Logging**:
+```javascript
+// Add to webhook-handler.js
+logger.debug('Processor matching', {
+  tokens: parsedConfig.tokens,
+  matchedProcessor: processor.name
+});
+```
+
+---
 
 #### 4. Authentication Failures
 
-**Symptoms**: 401/403 errors in logs
+**Symptoms**: 401/403 errors in Application Insights logs.
 
-**Checks**:
+**Diagnostic Steps**:
+
+1. **Test Azure AD Auth**:
+   ```bash
+   node validate-system.js
+   ```
+
+2. **Test UiPath Auth**:
+   ```bash
+   curl -X POST "https://account.uipath.com/oauth/token" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "grant_type=client_credentials&client_id=<CLIENT_ID>&client_secret=<CLIENT_SECRET>&scope=OR.Queues"
+   ```
+
+3. **Check Token Expiration**:
+   ```kusto
+   traces
+   | where message contains "Token" or message contains "authentication"
+   | where severityLevel >= 2
+   | project timestamp, message
+   | order by timestamp desc
+   ```
+
+**Solutions**:
+- Rotate expired client secrets
+- Verify scopes include `OR.Queues` for UiPath
+- Check app registration permissions in Azure AD
+
+---
+
+#### 5. Environment Mismatch
+
+**Symptoms**: Items go to wrong UiPath environment (DEV instead of PROD or vice versa).
+
+**Cause**: Incorrect `tenant:` or `folder:` in clientState.
+
+**Diagnostic**:
 ```bash
-# Test Azure AD auth
-node validate-system.js
-
-# Test UiPath auth
-curl -X POST "https://account.uipath.com/oauth/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials&client_id=YOUR_ID&client_secret=YOUR_SECRET&scope=OR.Queues"
+# Check webhook configuration
+curl "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" \
+  | jq '.subscriptions[] | {id, clientState}'
 ```
+
+**Expected Values**:
+- **DEV**: `tenant:DEV|folder:277500` → Routes to FAMBrands_RPAOPS
+- **PROD**: `tenant:PROD|folder:376892` → Routes to FAMBrands_RPAOPS_PROD
+
+**Solution**:
+```bash
+# Delete incorrect webhook
+curl -X DELETE "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>&subscriptionId=<webhook-id>"
+
+# Recreate with correct environment
+curl -X POST "https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/tenant.sharepoint.com:/sites/site:/lists/listId",
+    "changeType": "updated",
+    "notificationUrl": "https://<function-app>.azurewebsites.net/api/webhook-handler",
+    "clientState": "destination:uipath|handler:document|queue:QueueName|tenant:PROD|folder:376892"
+  }'
+```
+
+---
 
 ### Performance Optimization
 
 #### 1. Enable Token Caching
+
 ```javascript
-// Already implemented, ensure enabled
-ENABLE_TOKEN_CACHE=true
+// Already implemented in uipath-queue-client.js
+const ENABLE_TOKEN_CACHE = process.env.ENABLE_TOKEN_CACHE !== 'false';
 ```
+
+Ensure environment variable is set to `true` (default).
 
 #### 2. Batch Processing
+
+For high-volume scenarios, batch multiple queue items:
+
 ```javascript
-// Process multiple items in one API call
-const batchResults = await queueClient.addQueueItems(items);
+// Batch API support (if available in UiPath version)
+const batchResults = await queueClient.addQueueItems([item1, item2, item3]);
 ```
 
-#### 3. Async Processing
+#### 3. Async Background Operations
+
+Don't wait for non-critical operations:
+
 ```javascript
-// Don't wait for non-critical operations
-updateNotificationCount(subscriptionId).catch(logError);
+// Update notification count asynchronously
+updateNotificationCount(subscriptionId).catch(error =>
+  logger.warn('Failed to update notification count', { error: error.message })
+);
+
+// Immediately return 200 OK to SharePoint
+return { status: 200, body: 'OK' };
 ```
 
 ---
 
 ## Appendix
 
-### ClientState Format Reference
+### ClientState Configuration Reference
 
+**New Format**:
+```
+destination:{type}|handler:{name}|queue:{queueName}|tenant:{env}|folder:{id}|label:{identifier}
+
+Components (all optional except destination):
+- destination: uipath | forward | none
+- handler: document | costco | custom (required if destination=uipath)
+- queue: Target queue name (required if destination=uipath)
+- tenant: DEV | PROD (recommended for uipath)
+- folder: Organization unit ID (recommended for uipath)
+- label: Human-readable identifier (optional)
+```
+
+**Legacy Format** (Still Supported):
 ```
 processor:{type};uipath:{queue};env:{environment};folder:{id};config:{name}
 
-Components (all optional):
-- processor: Activates specific processor (document, costco, custom)
-- uipath: Target queue name
-- env: Environment (DEV, STAGING, PROD)
-- folder: UiPath organization unit ID
+Components:
+- processor: uipath | document | costco | custom
+- uipath: Queue name
+- env: DEV | PROD
+- folder: Organization unit ID
 - config: Named configuration
-- forward: URL for webhook forwarding
-- mode: Processing mode (withData, withChanges)
 ```
+
+### Environment Presets
+
+| Preset | Tenant Name | Folder ID | Typical Queues |
+|--------|-------------|-----------|----------------|
+| **DEV** | FAMBrands_RPAOPS | 277500 | test_webhook, Invoice_Processing_Test, Test_Queue |
+| **PROD** | FAMBrands_RPAOPS_PROD | 376892 | Invoice_Queue, COSTCO_Routing_Queue, Accounting_Research_Queue |
 
 ### Function Keys Reference
 
 Get current function keys:
+
 ```bash
 # Subscription Manager
 az functionapp function keys list \
-  --name your-function \
-  --resource-group your-rg \
+  --name <function-app> \
+  --resource-group <resource-group> \
   --function-name subscription-manager
 
 # Webhook Sync
 az functionapp function keys list \
-  --name your-function \
-  --resource-group your-rg \
+  --name <function-app> \
+  --resource-group <resource-group> \
   --function-name webhook-sync
+
+# Webhook Handler (no key required - anonymous)
+# Uses webhook validation instead
 ```
 
 ### Validation Script
 
-Save as `validate-webhook.js`:
+Save as `validate-uipath-webhook.js`:
+
 ```javascript
 const axios = require('axios');
 
-async function validateWebhookSetup() {
-  console.log('🔍 Validating Webhook Setup...\n');
+async function validateUiPathWebhookSetup() {
+  console.log('🔍 Validating UiPath Webhook Setup...\n');
 
-  // Check active webhooks
-  const webhooks = await getActiveWebhooks();
-  console.log(`✅ Active webhooks: ${webhooks.length}`);
+  try {
+    // 1. Check active webhooks
+    const webhooksResponse = await axios.get(
+      `https://<function-app>.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>`
+    );
+    const webhooks = webhooksResponse.data.subscriptions || [];
+    console.log(`✅ Active webhooks: ${webhooks.length}`);
 
-  // Check UiPath connection
-  const uipathConnected = await testUiPathConnection();
-  console.log(`✅ UiPath connection: ${uipathConnected ? 'OK' : 'FAILED'}`);
+    // 2. Verify UiPath destinations
+    const uipathWebhooks = webhooks.filter(w =>
+      w.clientState && w.clientState.includes('destination:uipath')
+    );
+    console.log(`✅ UiPath webhooks: ${uipathWebhooks.length}`);
 
-  // Check recent activity
-  const recentActivity = await getRecentActivity();
-  console.log(`✅ Recent queue items: ${recentActivity.count}`);
+    // 3. Check environment distribution
+    const devWebhooks = uipathWebhooks.filter(w => w.clientState.includes('tenant:DEV'));
+    const prodWebhooks = uipathWebhooks.filter(w => w.clientState.includes('tenant:PROD'));
+    console.log(`📊 Environment distribution: DEV=${devWebhooks.length}, PROD=${prodWebhooks.length}`);
 
-  console.log('\n📊 System Status: OPERATIONAL');
+    // 4. Test UiPath connection (using default config)
+    const tokenResponse = await axios.post(
+      'https://account.uipath.com/oauth/token',
+      'grant_type=client_credentials&client_id=<CLIENT_ID>&client_secret=<CLIENT_SECRET>&scope=OR.Queues',
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    console.log('✅ UiPath authentication: OK');
+
+    console.log('\n📊 System Status: OPERATIONAL');
+
+  } catch (error) {
+    console.error('❌ Validation failed:', error.message);
+  }
 }
 
-validateWebhookSetup().catch(console.error);
+validateUiPathWebhookSetup();
 ```
 
 ---
 
 ## Next Steps
 
-1. **Set up monitoring dashboard** in Application Insights
-2. **Create runbooks** for common operations
-3. **Implement custom processors** for your business logic
-4. **Configure alerts** for critical failures
-5. **Document your specific workflows** for team reference
+1. **Set up monitoring dashboard** in Application Insights with custom queries
+2. **Create runbooks** for common operations (webhook creation, renewal, troubleshooting)
+3. **Implement custom handlers** for your specific business logic
+4. **Configure alerts** for critical failures (authentication, queue submission errors)
+5. **Document your workflows** for team reference and knowledge transfer
 
-For support and updates, refer to the project repository and Azure Function logs.
+---
+
+## 📚 Related Documentation
+
+- **[Quick Start: Document Processor](./QUICK_START_DOCUMENT_PROCESSOR.md)** - Fast setup guide
+- **[Webhook Setup Guide](./WEBHOOK_SETUP_GUIDE.md)** - Comprehensive webhook configuration
+- **[UiPath Main Guide](./uipath/main-guide.md)** - UiPath-specific details
+- **[Visitor Onboarding Guide](./VISITOR_ONBOARDING_GUIDE.md)** - New user orientation
+- **[Documentation Index](./INDEX.md)** - Complete documentation hub
+
+---
+
+*Last Updated: December 2025 | Version 3.0*

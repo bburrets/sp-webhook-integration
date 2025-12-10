@@ -1,10 +1,37 @@
 # Quick Start: Document Processing Webhook
 
-This guide provides step-by-step instructions for setting up a document processing webhook that sends SharePoint document changes to a UiPath queue.
+This guide provides step-by-step instructions for setting up a document processing webhook that routes SharePoint document changes to a UiPath queue.
 
 ## Real Example: Accounting Research Documents
 
 This example shows the exact configuration used for the Accounting Research document library that processes invoices and financial documents.
+
+---
+
+## Understanding the Configuration
+
+### What You're Creating
+
+A webhook that:
+- **Monitors** a SharePoint document library for changes
+- **Extracts** document metadata (37+ fields)
+- **Routes** to UiPath for automated processing
+- **Uses** the generic document handler template
+
+### Configuration Components
+
+| Component | Value | Purpose |
+|-----------|-------|---------|
+| **Destination** | `uipath` | Route notifications to UiPath Orchestrator |
+| **Handler** | `document` | Use generic document processing template |
+| **Queue** | `test_webhook` | UiPath queue name (change for production) |
+| **Tenant** | `DEV` or `PROD` | Which UiPath environment to use |
+| **Folder** | `277500` (DEV) / `376892` (PROD) | UiPath folder/organization unit ID |
+| **Label** | `AccountingResearch` | Human-readable identifier for this webhook |
+
+---
+
+## Setup Steps
 
 ### 1️⃣ Get Function Keys
 
@@ -28,12 +55,13 @@ az functionapp function keys list \
 - subscription-manager: `<YOUR_SUBSCRIPTION_MANAGER_KEY>`
 - webhook-sync: `<YOUR_WEBHOOK_SYNC_KEY>`
 
-Get your function keys from Azure Portal or use:
-```bash
-az functionapp keys list --name webhook-functions-sharepoint-002 --resource-group rg-sharepoint-webhooks
-```
+> 💡 **Tip:** Store these keys securely. They provide access to your webhook management functions.
+
+---
 
 ### 2️⃣ Create Document Processing Webhook
+
+**Development Environment Example:**
 
 ```bash
 curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<YOUR_SUBSCRIPTION_MANAGER_KEY>" \
@@ -42,11 +70,43 @@ curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/sub
     "resource": "sites/fambrandsllc.sharepoint.com:/sites/Accounting_Research:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215",
     "changeType": "updated",
     "notificationUrl": "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-handler",
-    "clientState": "processor:uipath;processor:document;uipath:test_webhook;env:DEV;folder:277500;config:AccountingResearch"
+    "clientState": "destination:uipath|handler:document|queue:test_webhook|tenant:DEV|folder:277500|label:AccountingResearch"
   }' | jq '.'
 ```
 
-### 3️⃣ Sync to SharePoint Tracking
+**Production Environment Example:**
+
+```bash
+curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<YOUR_SUBSCRIPTION_MANAGER_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/fambrandsllc.sharepoint.com:/sites/Accounting_Research:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215",
+    "changeType": "updated",
+    "notificationUrl": "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-handler",
+    "clientState": "destination:uipath|handler:document|queue:Invoice_Processing|tenant:PROD|folder:376892|label:AccountingResearch"
+  }' | jq '.'
+```
+
+**Expected Response:**
+
+```json
+{
+  "id": "f6b235ad-b3fd-482c-a678-093cf971144d",
+  "resource": "sites/fambrandsllc.sharepoint.com:/sites/Accounting_Research:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215",
+  "changeType": "updated",
+  "clientState": "destination:uipath|handler:document|queue:test_webhook|tenant:DEV|folder:277500|label:AccountingResearch",
+  "notificationUrl": "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-handler",
+  "expirationDateTime": "2025-12-13T15:30:00.000Z"
+}
+```
+
+> ✅ **Success Indicator:** You should receive a JSON response with an `id` field. This is your webhook subscription ID.
+
+---
+
+### 3️⃣ Sync to SharePoint Tracking List
+
+This step creates a tracking record in SharePoint with an auto-generated description:
 
 ```bash
 curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-sync?code=<YOUR_WEBHOOK_SYNC_KEY>" \
@@ -54,43 +114,93 @@ curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/web
   -d '{}' | jq '.'
 ```
 
-### 4️⃣ Verify It's Working
+**What This Does:**
+- Creates/updates entries in SharePoint tracking list
+- Generates human-readable descriptions
+- Enriches webhook metadata
+- Syncs expiration dates
 
-```bash
-# Check active webhooks
-curl "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<YOUR_SUBSCRIPTION_MANAGER_KEY>" | jq '.'
+**Expected Output:**
+
+```json
+{
+  "success": true,
+  "synchronized": 1,
+  "created": 1,
+  "updated": 0,
+  "deleted": 0
+}
 ```
 
 ---
 
-## What Happens When a Document Changes
+### 4️⃣ Verify Webhook Is Active
 
-### 📄 Document Modified in SharePoint
-When someone uploads or modifies a document in the Accounting_Research/Documents library
+```bash
+# List all active webhooks
+curl "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<YOUR_SUBSCRIPTION_MANAGER_KEY>" | jq '.'
+```
 
-### 🔔 Webhook Notification
-SharePoint sends notification to Azure Function (~1-2 seconds)
+**Look For:**
+- Your webhook ID in the list
+- Correct `clientState` configuration
+- Future expiration date
+- Status showing as active
 
-### 🔍 Document Processor Activates
-The `processor:document` flag triggers the document processor
+---
 
-### 📊 Metadata Extraction
-System extracts 37+ fields including:
-- File name, size, type
-- Author and modifier details
-- Created and modified dates
-- Version information
-- Full SharePoint URLs
+## How It Works: Step-by-Step Flow
 
-### 📤 Queue Item Created
-Data sent to UiPath queue with:
-- Queue: `test_webhook` (or your configured queue)
-- Reference: `SPDOC_{filename}_{id}_{timestamp}`
-- Priority: Normal (configurable)
-- All metadata as SpecificContent
+### 📄 **Step 1: Document Modified in SharePoint**
+Someone uploads, modifies, or deletes a document in the monitored library
 
-### ⚙️ UiPath Processing
-Your robot picks up the queue item and processes the document
+### 🔔 **Step 2: SharePoint Sends Notification**
+SharePoint webhook fires within 1-2 seconds, sending notification to Azure Function
+
+### 🎯 **Step 3: Destination Router Activates**
+The `destination:uipath` configuration routes to UiPath processing pipeline
+
+### 📋 **Step 4: Document Handler Processes**
+The `handler:document` template:
+- Fetches full item data from SharePoint
+- Extracts 37+ metadata fields
+- Validates required fields
+- Builds queue item payload
+
+### 🌐 **Step 5: Environment Configuration Applied**
+System uses `tenant:DEV` and `folder:277500` to:
+- Authenticate with correct UiPath tenant
+- Target the specified folder/organization unit
+- Use proper credentials for environment
+
+### 📊 **Step 6: Metadata Extraction**
+System extracts comprehensive document information:
+
+**File Information:**
+- FileName, FileSize, FileType
+- FilePath, FileDirectory
+- UniqueId, Version
+
+**Metadata:**
+- Title, ContentType
+- Created, LastModified
+- Author, ModifiedBy
+- WebUrl, ServerUrl
+
+**Custom Fields:**
+- Department (if present)
+- Category (if present)
+- Any custom SharePoint columns
+
+### 📤 **Step 7: Queue Item Created**
+Data sent to UiPath Orchestrator:
+- **Queue Name:** From `queue:` parameter
+- **Reference:** `SPDOC_{filename}_{id}_{timestamp}`
+- **Priority:** Normal (configurable via handler)
+- **SpecificContent:** All extracted metadata
+
+### ⚙️ **Step 8: UiPath Robot Processes**
+Your UiPath robot picks up the queue item and executes your automation
 
 ---
 
@@ -104,60 +214,164 @@ Your robot picks up the queue item and processes the document
   "LastModified": "2025-11-13T01:34:50Z",
   "Created": "2025-07-16T23:00:20Z",
   "FileName": "Invoice_2025.pdf",
+  "FilePath": "/sites/Accounting_Research/Shared Documents/Invoice_2025.pdf",
+  "FileDirectory": "/sites/Accounting_Research/Shared Documents",
   "ContentType": "Document",
   "FileSize": "959868",
+  "UniqueId": "b5e7f3a1-9d2c-4e8f-a1c3-7b9d4e2f6a8c",
   "Author": "bburrets@fambrands.com",
+  "ModifiedBy": "jdoe@fambrands.com",
   "DocIcon": "pdf",
   "Version": "11.0",
-  "FilePath": "/sites/Accounting_Research/Shared Documents/Invoice_2025.pdf",
   "Department": "Accounting",
-  // ... 25+ additional fields
+  "ServerUrl": "https://fambrandsllc.sharepoint.com",
+  "SiteUrl": "https://fambrandsllc.sharepoint.com/sites/Accounting_Research"
+  // ... 20+ additional fields depending on SharePoint configuration
 }
 ```
 
 ---
 
+## Configuration Reference
+
+### ClientState Format
+
+```
+destination:{target}|handler:{template}|queue:{name}|tenant:{env}|folder:{id}|label:{identifier}
+```
+
+**Parameters:**
+
+| Parameter | Required | Values | Description |
+|-----------|----------|--------|-------------|
+| `destination` | ✅ Yes | `uipath` | Routes to UiPath Orchestrator |
+| `handler` | ✅ Yes | `document`, `costco`, `custom` | Processing template to use |
+| `queue` | ✅ Yes | Any valid queue name | UiPath queue to receive items |
+| `tenant` | ✅ Yes | `DEV`, `PROD` | Which UiPath environment |
+| `folder` | ✅ Yes | Numeric folder ID | UiPath organization unit |
+| `label` | ⚪ Optional | Any string (no spaces) | Human-readable identifier |
+
+### Environment Presets
+
+The system knows these UiPath environments:
+
+**DEV Environment:**
+```
+Tenant: FAMBrands_RPAOPS
+Folder: 277500
+URL: https://cloud.uipath.com/fambrdpwrgnn/FAMBrands_RPAOPS/orchestrator_
+```
+
+**PROD Environment:**
+```
+Tenant: FAMBrands_RPAOPS_PROD
+Folder: 376892
+URL: https://cloud.uipath.com/fambrdpwrgnn/FAMBrands_RPAOPS_PROD/orchestrator_
+```
+
+> 💡 **Custom Folders:** You can override the default folder by specifying `folder:{your-folder-id}`
+
+---
+
 ## Customization Options
 
-### Change Target Queue
+### Targeting a Different Queue
 
-Modify the clientState when creating the webhook:
-```javascript
-"clientState": "processor:uipath;processor:document;uipath:YOUR_QUEUE_NAME;..."
+Change the `queue:` parameter:
+
+```json
+"clientState": "destination:uipath|handler:document|queue:Invoice_Queue|tenant:PROD|folder:376892"
 ```
 
-### Add Filtering
+### Using Custom Folder IDs
 
-Only process specific file types:
+Override environment defaults:
+
+```json
+"clientState": "destination:uipath|handler:document|queue:MyQueue|tenant:PROD|folder:606837|label:CustomFolder"
+```
+
+### Adding Descriptive Labels
+
+Use meaningful labels for tracking:
+
+```json
+"clientState": "destination:uipath|handler:document|queue:Contracts|tenant:PROD|folder:376892|label:LegalContracts"
+```
+
+---
+
+## Advanced Customization
+
+### File Type Filtering
+
+Modify the document handler to process only specific file types:
+
+**Location:** `src/templates/generic-document-processor.js`
+
 ```javascript
-// In generic-document-processor.js
 shouldProcessItem(item) {
-  const allowedTypes = ['.pdf', '.docx', '.xlsx'];
+  // Only process PDFs and Word documents
+  const allowedTypes = ['.pdf', '.docx', '.doc'];
   const fileExt = item.FileLeafRef?.toLowerCase().match(/\.[^.]+$/)?.[0];
-  return allowedTypes.includes(fileExt);
+
+  if (!allowedTypes.includes(fileExt)) {
+    this.logger.info('Skipping file - not an allowed type', {
+      fileName: item.FileLeafRef,
+      extension: fileExt
+    });
+    return false;
+  }
+
+  return true;
 }
 ```
 
-### Change Priority Logic
+### Priority-Based Routing
 
-Set priority based on file characteristics:
+Set queue item priority based on document characteristics:
+
 ```javascript
-// In generic-document-processor.js
-getPriority(item) {
-  if (item.Title?.includes('URGENT')) return 'High';
-  if (item.FileSizeDisplay > 10000000) return 'Low'; // Large files
-  return 'Normal';
+buildReference(item) {
+  const rawId = item.ID || item.id || 'NOID';
+  const fileName = (item.FileLeafRef || item.Title || 'ITEM').replace(/[\s,]+/g, '_');
+
+  // Determine priority
+  let priority = 'Normal';
+  if (item.Title?.toUpperCase().includes('URGENT')) {
+    priority = 'High';
+  } else if (parseInt(item.FileSizeDisplay) > 10000000) {
+    priority = 'Low'; // Large files processed later
+  }
+
+  return {
+    reference: `SPDOC_${fileName}_${rawId}_${Date.now()}`,
+    priority: priority
+  };
 }
 ```
 
-### Add Department Routing
+### Department-Based Queue Routing
 
-Route to different queues by folder:
+Route to different queues based on folder structure:
+
 ```javascript
-getQueueName(item) {
-  if (item.FileDirRef?.includes('/Invoices')) return 'Invoice_Queue';
-  if (item.FileDirRef?.includes('/Contracts')) return 'Contract_Queue';
-  return 'General_Queue';
+async processItem(item, previousItem = null, queueNameOverride = null) {
+  // Determine queue based on file path
+  let targetQueue = this.options.defaultQueue;
+
+  if (item.FileDirRef?.includes('/Invoices')) {
+    targetQueue = 'Invoice_Processing_Queue';
+  } else if (item.FileDirRef?.includes('/Contracts')) {
+    targetQueue = 'Legal_Review_Queue';
+  } else if (item.FileDirRef?.includes('/HR')) {
+    targetQueue = 'HR_Documents_Queue';
+  }
+
+  // Use override if provided
+  const queueName = queueNameOverride || targetQueue;
+
+  // ... rest of processing
 }
 ```
 
@@ -165,36 +379,53 @@ getQueueName(item) {
 
 ## Production Deployment Checklist
 
-### ✅ Before Going Live
+### ✅ Pre-Deployment Tasks
 
-- [ ] **Change Environment**: Update `env:PROD` in clientState
-- [ ] **Update Queue Name**: Use production queue name
-- [ ] **Set Folder ID**: Use production folder ID (e.g., 376892)
-- [ ] **Update Tenant**: If using production tenant
-- [ ] **Test Thoroughly**: Process test documents first
-- [ ] **Monitor Initially**: Watch Application Insights closely
-- [ ] **Document Changes**: Update team documentation
-- [ ] **Set Up Alerts**: Configure failure alerts
-- [ ] **Backup Config**: Save all configuration values
-- [ ] **Train Team**: Ensure team knows the process
+- [ ] **Test in DEV first** - Verify complete flow works
+- [ ] **Verify queue exists** - Check UiPath Orchestrator PROD folder
+- [ ] **Update clientState** - Change `tenant:PROD` and production queue name
+- [ ] **Set production folder** - Update `folder:376892` (or your PROD folder)
+- [ ] **Test credentials** - Ensure UiPath PROD credentials are valid
+- [ ] **Configure alerts** - Set up Application Insights alerts for failures
+- [ ] **Document setup** - Record all configuration details
+- [ ] **Train team** - Ensure operations team knows the process
 
-### 🔄 Switching Environments
+### 🔄 Environment Switching Examples
 
-```bash
-# Development
-"clientState": "processor:uipath;processor:document;uipath:test_webhook;env:DEV;folder:277500"
+**Development:**
+```json
+"clientState": "destination:uipath|handler:document|queue:Test_Queue|tenant:DEV|folder:277500|label:DevTest"
+```
 
-# Production
-"clientState": "processor:uipath;processor:document;uipath:Production_Queue;env:PROD;folder:376892"
+**Production:**
+```json
+"clientState": "destination:uipath|handler:document|queue:Invoice_Production|tenant:PROD|folder:376892|label:InvoiceProcessing"
+```
+
+**Production with Custom Folder:**
+```json
+"clientState": "destination:uipath|handler:document|queue:Contracts|tenant:PROD|folder:606837|label:LegalDepartment"
 ```
 
 ---
 
-## Monitoring Commands
+## Monitoring & Verification
 
-### Check Recent Activity
+### Check Webhook Status
+
 ```bash
-# View recent logs
+# List all active webhooks
+curl "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<YOUR_KEY>" | jq '.'
+
+# Check specific webhook by subscription ID
+curl "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<YOUR_KEY>" | \
+  jq '.subscriptions[] | select(.id == "f6b235ad-b3fd-482c-a678-093cf971144d")'
+```
+
+### View Recent Activity
+
+```bash
+# Stream live logs
 az webapp log tail \
   --name webhook-functions-sharepoint-002 \
   --resource-group rg-sharepoint-webhooks \
@@ -202,7 +433,9 @@ az webapp log tail \
 ```
 
 ### Query Application Insights
+
 ```bash
+# Check UiPath queue submissions in last hour
 az monitor app-insights query \
   --app webhook-functions-sharepoint-002 \
   --resource-group rg-sharepoint-webhooks \
@@ -210,58 +443,216 @@ az monitor app-insights query \
   --output table
 ```
 
-### Run Validation Script
+### Run System Validation
+
 ```bash
+# Run comprehensive validation script
 ./run-validation.sh
 ```
 
 ---
 
-## Troubleshooting Quick Fixes
+## Troubleshooting
 
 ### 🔴 Webhook Expired
+
+**Symptom:** No notifications received, webhook not in active list
+
+**Solution:** Recreate webhook with same configuration:
+
 ```bash
-# Just recreate it with the same command from step 2
-curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=KEY" ...
+curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/fambrandsllc.sharepoint.com:/sites/Accounting_Research:/lists/1073e81c-e8ea-483c-ac8c-680148d9e215",
+    "changeType": "updated",
+    "notificationUrl": "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-handler",
+    "clientState": "destination:uipath|handler:document|queue:test_webhook|tenant:DEV|folder:277500|label:AccountingResearch"
+  }'
 ```
+
+> 💡 **Auto-Renewal:** Webhooks auto-renew when <24 hours remain until expiration
+
+---
 
 ### 🔴 Queue Items Not Creating
-Check the logs for the actual error:
+
+**Check logs for the actual error:**
+
 ```bash
-az webapp log tail --name webhook-functions-sharepoint-002 --resource-group rg-sharepoint-webhooks
+az webapp log tail \
+  --name webhook-functions-sharepoint-002 \
+  --resource-group rg-sharepoint-webhooks | \
+  grep -E "(error|Error|ERROR|failed)"
 ```
 
-Common causes:
-- Wrong queue name
-- Wrong folder ID
-- UiPath credentials expired
-- Document doesn't meet filter criteria
+**Common Causes:**
+
+| Error Message | Cause | Solution |
+|---------------|-------|----------|
+| "Queue does not exist" | Wrong queue name or folder | Verify queue exists in UiPath folder |
+| "Folder does not exist" | Wrong folder ID | Check folder ID in Orchestrator |
+| "Authentication failed" | Expired credentials | Update UIPATH_CLIENT_SECRET |
+| "Document processor skipping" | File type filter | Check shouldProcessItem logic |
+| "Tenant not found" | Wrong tenant name | Verify tenant:DEV or tenant:PROD |
+
+**Debugging Steps:**
+
+1. **Check clientState is correct:**
+   ```bash
+   curl "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<KEY>" | \
+     jq '.subscriptions[] | .clientState'
+   ```
+
+2. **Verify environment configuration:**
+   ```bash
+   # Check Application Settings in Azure Portal
+   az functionapp config appsettings list \
+     --name webhook-functions-sharepoint-002 \
+     --resource-group rg-sharepoint-webhooks | \
+     jq '.[] | select(.name | contains("UIPATH"))'
+   ```
+
+3. **Test UiPath connection manually:**
+   ```bash
+   # Run local validation
+   node src/shared/uipath-auth.js
+   ```
+
+---
 
 ### 🔴 Wrong Documents Processing
-Add filtering in the processor:
+
+**Add filtering in the handler:**
+
+**Location:** `src/templates/generic-document-processor.js`
+
 ```javascript
-// Only process PDFs
-if (!item.FileLeafRef?.toLowerCase().endsWith('.pdf')) {
-  return { processed: false, reason: 'Not a PDF' };
+shouldProcessItem(item) {
+  // Only process PDFs
+  if (!item.FileLeafRef?.toLowerCase().endsWith('.pdf')) {
+    this.logger.info('Skipping non-PDF file', { fileName: item.FileLeafRef });
+    return false;
+  }
+
+  // Skip files larger than 50MB
+  const maxSize = 50 * 1024 * 1024;
+  if (parseInt(item.FileSizeDisplay) > maxSize) {
+    this.logger.info('Skipping large file', {
+      fileName: item.FileLeafRef,
+      size: item.FileSizeDisplay
+    });
+    return false;
+  }
+
+  // Skip temp files
+  if (item.FileLeafRef?.startsWith('~$')) {
+    this.logger.info('Skipping temp file', { fileName: item.FileLeafRef });
+    return false;
+  }
+
+  return true;
 }
 ```
 
 ---
 
+### 🔴 High Volume Issues
+
+**Symptom:** Slow processing, queue items delayed
+
+**Solutions:**
+
+1. **Increase Function App scaling:**
+   ```bash
+   az functionapp plan update \
+     --name your-plan-name \
+     --resource-group rg-sharepoint-webhooks \
+     --max-burst 20
+   ```
+
+2. **Optimize handler for batch processing:**
+   - Reduce unnecessary SharePoint API calls
+   - Minimize logging in high-volume scenarios
+   - Use queue batch operations
+
+3. **Monitor Application Insights:**
+   - Check for throttling
+   - Review execution times
+   - Identify bottlenecks
+
+---
+
 ## Support Resources
 
-- **Project Documentation**: `/docs/guides/`
-- **Processor Code**: `/src/templates/generic-document-processor.js`
-- **Configuration**: `/src/shared/config.js`
-- **Logs**: Application Insights in Azure Portal
-- **Team Contact**: Update with your team's contact info
+### Documentation
+- **Complete Guide:** `/docs/guides/WEBHOOK_TO_QUEUE_COMPLETE_GUIDE.md`
+- **API Reference:** `/docs/api/FUNCTION_REFERENCE.md`
+- **Troubleshooting:** `/docs/troubleshooting/COMMON_ERRORS.md`
+- **Architecture:** `/docs/architecture/CURRENT_STATE.md`
+
+### Code Locations
+- **Document Handler:** `/src/templates/generic-document-processor.js`
+- **UiPath Queue Client:** `/src/shared/uipath-dynamic-queue-client.js`
+- **Environment Config:** `/src/shared/uipath-environment-config.js`
+- **Configuration:** `/src/shared/config.js`
+
+### Monitoring
+- **Application Insights:** Azure Portal → webhook-functions-sharepoint-002
+- **Function App Logs:** Azure Portal → Log Stream
+- **UiPath Orchestrator:** Check queue and job status
+
+### Getting Help
+- **Check CLAUDE.md:** Quick reference for common issues
+- **Review Logs:** Application Insights has detailed traces
+- **Run Validation:** `./run-validation.sh` checks system health
+- **Team Contact:** [Update with your team's contact information]
 
 ---
 
 ## Next Steps
 
-1. **Test with a sample document** - Upload a test PDF to verify flow
-2. **Monitor the first day** - Watch for any errors or issues
-3. **Optimize as needed** - Adjust filtering and priority rules
-4. **Scale to other libraries** - Reuse this pattern for other document types
-5. **Create custom processors** - Build specific processors for unique workflows
+### 1. **Test with Sample Document**
+Upload a test PDF to your SharePoint library and verify:
+- Webhook notification received
+- Document metadata extracted
+- Queue item created in UiPath
+- Robot processes successfully
+
+### 2. **Monitor First Day**
+Watch Application Insights for:
+- Any errors or warnings
+- Processing times
+- Queue item creation success rate
+
+### 3. **Optimize Configuration**
+Fine-tune based on actual usage:
+- Adjust file type filters
+- Optimize priority logic
+- Configure department routing
+
+### 4. **Scale to Other Libraries**
+Apply this pattern to other document libraries:
+- Create new webhook with different resource
+- Use same handler template
+- Route to appropriate queues
+
+### 5. **Build Custom Handlers**
+For specialized workflows, create custom handlers:
+- Copy `generic-document-processor.js` as template
+- Implement custom business logic
+- Register in processor registry
+
+---
+
+## Related Guides
+
+- **[Webhook Setup Guide](./WEBHOOK_SETUP_GUIDE.md)** - Forwarding and change detection
+- **[Complete Webhook to Queue Guide](./WEBHOOK_TO_QUEUE_COMPLETE_GUIDE.md)** - Full technical reference
+- **[Visitor Onboarding Guide](./VISITOR_ONBOARDING_GUIDE.md)** - System overview
+- **[Production Scaling Guide](./PRODUCTION_SCALING_GUIDE.md)** - Enterprise deployment
+
+---
+
+*Last Updated: December 10, 2025 | Version 3.0*
+*Updated for new terminology and multi-environment support*
