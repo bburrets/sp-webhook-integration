@@ -119,6 +119,56 @@ Additional columns for tracking:
 - Utility to inspect SharePoint list structure
 - Useful for debugging field issues
 
+## 🎯 Available Processors
+
+The solution supports three types of processors that can be configured via the `clientState` parameter:
+
+### 1. **UiPath Processor** (`processor:uipath`)
+Routes SharePoint items to UiPath Orchestrator queues for robotic process automation.
+
+**Trigger Patterns:**
+- `processor:uipath` - Basic UiPath processing
+- `processor:uipath;processor:costco` - COSTCO-specific routing template
+- `processor:uipath;processor:document` - Generic document library processor
+
+**Sub-Processors:**
+- **COSTCO Template**: Processes COSTCO-INLINE routing forms when Status = "Send Generated Form"
+- **Generic Document**: Processes any document library changes
+
+**Configuration Format:**
+```
+processor:uipath;uipath:{queue_name};env:{DEV|PROD};folder:{folder_id}
+```
+
+### 2. **Forward Processor** (`forward:`)
+Forwards notifications to external webhook URLs (Teams, Slack, custom services).
+
+**Modes:**
+- **Simple**: `forward:https://your-url` - Basic notification relay
+- **Enhanced**: `forward:https://your-url;mode:withChanges` - Includes field-level change detection
+- **Full**: `forward:https://your-url;mode:full` - Complete item data
+
+**Additional Options:**
+- `excludeFields:Field1,Field2` - Exclude specific fields from change detection
+- `detectChanges:true` - Legacy change detection flag
+
+### 3. **Hybrid Mode** (Combined Processing)
+Use both UiPath and forwarding simultaneously!
+
+**Example:**
+```
+processor:uipath;uipath:MyQueue;env:DEV;folder:123456;forward:https://webhook.site/abc123
+```
+
+This will:
+1. Send item to UiPath queue
+2. Forward notification to external URL
+
+### 4. **No Processor** (Passive Monitoring)
+Omit `clientState` or use empty string to only track notification counts in the management dashboard.
+
+---
+
 ## 📡 Common Use Cases
 
 ### 1️⃣ Basic SharePoint Monitoring
@@ -133,20 +183,33 @@ curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=Y
   }'
 ```
 
-### 2️⃣ Send to UiPath Robot Queue
-Automatically process items with UiPath robots:
+### 2️⃣ UiPath: COSTCO Template
+Automatically process COSTCO routing forms with UiPath:
 ```bash
 curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource": "sites/contoso.sharepoint.com:/sites/finance:/lists/invoices-list-id",
+    "resource": "sites/contoso.sharepoint.com:/sites/DWI/COSTCO-INLINE:/lists/list-id",
     "changeType": "updated",
     "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
-    "clientState": "processor:uipath"
+    "clientState": "processor:uipath;uipath:Trafficking Request Email Trigger_Queue;env:DEV;folder:277500"
   }'
 ```
 
-### 3️⃣ Forward to External Service
+### 3️⃣ UiPath: Document Library
+Process document library changes with UiPath:
+```bash
+curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/contoso.sharepoint.com:/sites/DWI:/lists/doc-library-id",
+    "changeType": "updated",
+    "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
+    "clientState": "processor:uipath;processor:document;uipath:DocumentQueue;env:DEV;folder:277500"
+  }'
+```
+
+### 4️⃣ Forward to External Service
 Send notifications to Teams, Slack, or any webhook:
 ```bash
 curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
@@ -159,8 +222,8 @@ curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=Y
   }'
 ```
 
-### 4️⃣ Advanced: Track What Changed
-Get detailed change information:
+### 5️⃣ Advanced: Track What Changed
+Get detailed field-level change information:
 ```bash
 curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
   -H "Content-Type: application/json" \
@@ -168,7 +231,20 @@ curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=Y
     "resource": "sites/contoso.sharepoint.com:/sites/sales:/lists/opportunities-id",
     "changeType": "updated",
     "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
-    "clientState": "forward:https://your-api.com/changes;mode:withChanges"
+    "clientState": "forward:https://your-api.com/changes;mode:withChanges;excludeFields:_UIVersionString"
+  }'
+```
+
+### 6️⃣ Hybrid: UiPath + External Forwarding
+Process with UiPath AND forward to monitoring service:
+```bash
+curl -X POST "https://your-app.azurewebsites.net/api/subscription-manager?code=YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource": "sites/contoso.sharepoint.com:/sites/ops:/lists/workflow-id",
+    "changeType": "updated",
+    "notificationUrl": "https://your-app.azurewebsites.net/api/webhook-handler",
+    "clientState": "processor:uipath;uipath:WorkflowQueue;env:PROD;folder:376892;forward:https://monitor.example.com/webhook"
   }'
 ```
 

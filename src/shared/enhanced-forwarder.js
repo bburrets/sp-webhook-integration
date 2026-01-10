@@ -60,19 +60,82 @@ class EnhancedForwarder {
             }
             
             // Otherwise get recent items
-            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$orderby=lastModifiedDateTime desc&$top=5`;
+            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$orderby=lastModifiedDateTime desc&$top=20`;
             const response = await axios.get(listUrl, {
                 headers: {
                     'Authorization': `Bearer ${this.accessToken}`,
                     'Accept': 'application/json'
                 }
             });
-            
-            // Return most recently modified item
+
+            // When multiple files are uploaded simultaneously, we need to return all items
+            // modified within the last 30 seconds to ensure we don't miss any
+            const now = new Date();
+            const thirtySecondsAgo = new Date(now.getTime() - 30000);
+
+            const recentItems = response.data.value.filter(item => {
+                const modifiedDate = new Date(item.lastModifiedDateTime);
+                return modifiedDate >= thirtySecondsAgo;
+            });
+
+            this.context?.log(`Found ${recentItems.length} items modified in last 30 seconds (out of ${response.data.value.length} total)`);
+
+            // Return most recently modified item (for backward compatibility)
+            // Note: This will still only return one item, but the caller should be updated
+            // to handle multiple items when needed
             return response.data.value[0] || null;
         } catch (error) {
             this.context.error('Failed to get item data:', error.message);
             return null;
+        }
+    }
+
+    // Get ALL recently modified items (for handling multiple simultaneous uploads)
+    async getRecentItems(resource, withinSeconds = 120) {
+        try {
+            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$orderby=lastModifiedDateTime desc&$top=20`;
+
+            this.context?.log(`getRecentItems: Fetching from ${listUrl}`);
+
+            const response = await axios.get(listUrl, {
+                headers: {
+                    'Authorization': `Bearer ${this.accessToken}`,
+                    'Accept': 'application/json'
+                }
+            });
+
+            const allItems = response.data.value || [];
+            this.context?.log(`getRecentItems: Graph API returned ${allItems.length} items`);
+
+            if (allItems.length === 0) {
+                return [];
+            }
+
+            // Filter to items modified within the specified time window
+            const now = new Date();
+            const cutoffTime = new Date(now.getTime() - (withinSeconds * 1000));
+
+            const recentItems = allItems.filter(item => {
+                const modifiedDate = new Date(item.lastModifiedDateTime);
+                return modifiedDate >= cutoffTime;
+            });
+
+            this.context?.log(`getRecentItems: Found ${recentItems.length} items modified in last ${withinSeconds} seconds`);
+
+            // If no items match the time filter, return the most recently modified item anyway
+            // This handles cases where SharePoint notification was delayed
+            if (recentItems.length === 0 && allItems.length > 0) {
+                this.context?.log(`getRecentItems: No items in time window, falling back to most recent item`);
+                const mostRecent = allItems[0];
+                this.context?.log(`getRecentItems: Returning most recent item: ${mostRecent.id} (modified: ${mostRecent.lastModifiedDateTime})`);
+                return [mostRecent];
+            }
+
+            return recentItems;
+        } catch (error) {
+            this.context?.error('Failed to get recent items:', error.message);
+            this.context?.error('Error details:', error.response?.data || error);
+            return [];
         }
     }
     

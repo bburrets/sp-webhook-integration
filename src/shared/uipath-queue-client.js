@@ -359,7 +359,8 @@ class UiPathQueueClient {
 
         // Define apiUrl outside try block so it's available in catch block
         const targetQueue = queueName || this.defaultQueue;
-        const apiUrl = `${config.uipath.orchestratorUrl}${UIPATH_API_ENDPOINTS.ADD_QUEUE_ITEM}`;
+        // Use auth instance's orchestrator URL to support multi-environment configurations
+        const apiUrl = `${this.auth.orchestratorUrl}${UIPATH_API_ENDPOINTS.ADD_QUEUE_ITEM}`;
         
         try {
             if (!targetQueue) {
@@ -619,7 +620,7 @@ class UiPathQueueClient {
             const httpClient = await this.auth.getAuthenticatedClient();
 
             const response = await httpClient.get(
-                `${config.uipath.orchestratorUrl}/odata/QueueItems?${queryParams.toString()}`
+                `${this.auth.orchestratorUrl}/odata/QueueItems?${queryParams.toString()}`
             );
 
             const items = response.data?.value || [];
@@ -672,7 +673,7 @@ class UiPathQueueClient {
             const httpClient = await this.auth.getAuthenticatedClient();
 
             const response = await httpClient.get(
-                `${config.uipath.orchestratorUrl}/odata/QueueItems(${queueItemId})`
+                `${this.auth.orchestratorUrl}/odata/QueueItems(${queueItemId})`
             );
 
             this.logger.info('Retrieved UiPath queue item', {

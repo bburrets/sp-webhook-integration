@@ -17,16 +17,15 @@ class GenericDocumentProcessor {
         this.logger = createLogger(context);
 
         // Support both old signature (context, options) and new (context, configOverrides)
-        // If configOverrides looks like options (has includeFields, excludeFields, etc), treat it as options
-        const isOptions = configOverrides && (
-            configOverrides.includeFields ||
-            configOverrides.excludeFields ||
-            configOverrides.defaultQueue ||
-            configOverrides.referencePrefix
+        // Environment config has orchestratorUrl/tenantName, options have includeFields/excludeFields
+        const isEnvConfig = configOverrides && (
+            configOverrides.orchestratorUrl ||
+            configOverrides.tenantName ||
+            configOverrides.organizationUnitId
         );
 
-        const options = isOptions ? configOverrides : {};
-        const envConfig = isOptions ? null : configOverrides;
+        const options = isEnvConfig ? {} : (configOverrides || {});
+        const envConfig = isEnvConfig ? configOverrides : null;
 
         // Accept configOverrides for multi-environment support
         this.queueClient = createDynamicUiPathQueueClient(context, envConfig);

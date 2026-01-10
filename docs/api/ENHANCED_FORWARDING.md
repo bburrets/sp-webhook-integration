@@ -2,7 +2,18 @@
 
 ## Overview
 
-The SharePoint webhook solution now supports enhanced forwarding modes that can include the actual data and change details, not just the notification that something changed.
+The SharePoint webhook solution supports **forward processor** for routing notifications to external services (Teams, Slack, custom APIs) with optional data enrichment and change detection. This is one of three available processors alongside UiPath and Hybrid modes.
+
+## Processor Types
+
+| Processor | ClientState Pattern | Description |
+|-----------|-------------------|-------------|
+| **UiPath** | `processor:uipath;...` | Routes items to UiPath Orchestrator queues |
+| **Forward** | `forward:https://...` | Forwards notifications to external webhooks |
+| **Hybrid** | Both patterns combined | Does both UiPath routing AND forwarding |
+| **None** | Empty/omitted | Passive monitoring (notification counts only) |
+
+This document focuses on the **Forward Processor**.
 
 ## ClientState Format
 
@@ -139,20 +150,34 @@ Excludes the specified fields from the response.
 
 ## Examples
 
-### Example 1: Track Status Changes Only
+### Example 1: Simple Forwarding to Slack
+```
+clientState: "forward:https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+```
+
+### Example 2: Track Status Changes Only
 ```
 clientState: "forward:https://myapp.com/webhook;mode:withChanges;includeFields:Status,Modified,id"
 ```
 
-### Example 2: Full Data Without System Fields
+### Example 3: Full Data Without System Fields
 ```
 clientState: "forward:https://myapp.com/webhook;mode:withData;excludeFields:_UIVersionString,_ComplianceFlags,AuthorLookupId,EditorLookupId"
 ```
 
-### Example 3: Detect Any Changes with Full Context
+### Example 4: Detect Any Changes with Full Context
 ```
 clientState: "forward:https://myapp.com/webhook;mode:withChanges"
 ```
+
+### Example 5: Hybrid - Forward AND Send to UiPath
+```
+clientState: "processor:uipath;uipath:MyQueue;env:DEV;folder:277500;forward:https://webhook.site/abc123;mode:withChanges"
+```
+
+This will:
+1. Process the item with UiPath (send to queue)
+2. Forward enriched notification with change detection to external URL
 
 ## Implementation Notes
 

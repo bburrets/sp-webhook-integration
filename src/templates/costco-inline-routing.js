@@ -413,9 +413,9 @@ class CostcoTemplateProcessor {
             
             // SharePoint context - simplified
             SharePointItemId: String(item.id || item.ID || item.fields?.id || 'UNKNOWN'),
-            
-            // Core business data - minimal set without email or hyperlinks
-            // ShipToEmail removed - was causing issues
+
+            // Core business data
+            ShipToEmail: item.fields?.Ship_x002d_toEmail || item.fields?.ShiptoEmail || item['Ship_x002d_toEmail'] || item['ShiptoEmail'] || item['Ship_x0020_To_x0020_Email'] || '',
             ShipDate: item.fields?.ShipDate || item['ShipDate'] || item['Ship_x0020_Date'] || '',
             Style: item.fields?.Style || item['Style'] || '',
             PONumber: String(item.fields?.PO_x005f_No || item.fields?.PO_No || item['PO_x005f_No'] || item['PO_No'] || item['PO_x005f_no'] || 'NOPO'),

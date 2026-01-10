@@ -70,14 +70,18 @@ function listProcessors() {
 
 /**
  * Parse clientState string into normalized token array
+ * Supports both new format (|) and legacy format (;) separators
  */
 function parseClientState(clientState) {
     if (!clientState || typeof clientState !== 'string') {
         return [];
     }
 
+    // Detect separator: new format uses | (pipe), legacy uses ; (semicolon)
+    const separator = clientState.includes('|') ? '|' : ';';
+
     return clientState
-        .split(';')
+        .split(separator)
         .map(token => token.trim())
         .filter(Boolean)
         .map(token => token.toLowerCase());
@@ -95,7 +99,11 @@ registerProcessor({
         }
 
         const tokenMatch = (tokens || []).some(token =>
-            token.includes('costco') || token.includes('processor:costco')
+            token.includes('costco') ||
+            token.includes('handler:costco') ||      // New format
+            token.includes('hdlr:costco') ||         // Abbreviated format
+            token.includes('processor:costco') ||     // Legacy format
+            token.includes('processor:costco_inline')
         );
 
         const resourceMatch = resource ? resource.toLowerCase().includes('costco') : false;
@@ -115,7 +123,13 @@ registerProcessor({
     name: 'generic-document',
     matches: ({ tokens, resource }) => {
         // Trigger when clientState explicitly requests document processing
-        if (tokens && tokens.some(token => token.includes('processor:document'))) {
+        // New format: handler:document
+        // Legacy format: processor:document
+        if (tokens && tokens.some(token =>
+            token.includes('handler:document') ||
+            token.includes('hdlr:document') ||       // Abbreviated format
+            token.includes('processor:document')
+        )) {
             return true;
         }
 
@@ -126,8 +140,8 @@ registerProcessor({
         }
         return false;
     },
-    factory: context => {
-        const processor = createGenericDocumentProcessor(context);
+    factory: (context, configOverrides) => {
+        const processor = createGenericDocumentProcessor(context, configOverrides);
         return {
             name: 'generic-document',
             process: async ({ item, previousItem, queueName }) =>

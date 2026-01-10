@@ -42,8 +42,9 @@ function parseEnvironmentFromClientState(clientState) {
         queueName: null
     };
 
-    // Parse semicolon-separated tokens
-    const tokens = clientState.split(';').map(t => t.trim());
+    // Parse tokens - support both new format (|) and legacy format (;)
+    const separator = clientState.includes('|') ? '|' : ';';
+    const tokens = clientState.split(separator).map(t => t.trim());
 
     for (const token of tokens) {
         const colonIndex = token.indexOf(':');
@@ -52,12 +53,17 @@ function parseEnvironmentFromClientState(clientState) {
         const key = token.substring(0, colonIndex).toLowerCase();
         const value = token.substring(colonIndex + 1);
 
-        if (key === 'env' || key === 'environment') {
+        if (key === 'env' || key === 'environment' || key === 'tenant' || key === 't') {
+            // Full format: tenant:PROD, Abbreviated: t:PROD, Legacy: env:DEV
             envConfig.environment = value.toUpperCase();
-        } else if (key === 'folder' || key === 'organizationunitid') {
+        } else if (key === 'folder' || key === 'organizationunitid' || key === 'f') {
+            // Full format: folder:123456, Abbreviated: f:123456
             envConfig.folder = value;
         } else if (key === 'uipath' && !value.includes(':')) {
             // Extract queue name from "uipath:QueueName"
+            envConfig.queueName = value;
+        } else if (key === 'queue' || key === 'q') {
+            // Full format: queue:QueueName, Abbreviated: q:QueueName
             envConfig.queueName = value;
         }
     }

@@ -247,15 +247,19 @@ function shouldProcessForUiPath(clientState) {
     }
 
     // Check for UiPath processor indicator in clientState
-    // Format examples:
+    // Format examples (new format):
+    // - "destination:uipath" or "dest:uipath"
+    // - "destination:uipath|handler:document|queue:QueueName"
+    // Format examples (legacy format):
     // - "processor:uipath"
     // - "forward:url;processor:uipath"
     // - "uipath:enabled"
     // - "uipath:TEST_API" (queue name)
-    // - "uipath:TEST_API;costco:routing"
-    
+
     const lowercaseState = clientState.toLowerCase();
-    return lowercaseState.includes('processor:uipath') || 
+    return lowercaseState.includes('destination:uipath') ||  // New format
+           lowercaseState.includes('dest:uipath') ||         // Abbreviated format
+           lowercaseState.includes('processor:uipath') ||    // Legacy format
            lowercaseState.includes('uipath:enabled') ||
            lowercaseState.includes('uipath=true') ||
            lowercaseState.includes('uipath:'); // Matches any UiPath queue specification
@@ -301,27 +305,36 @@ async function fetchSharePointItem(resource, resourceData, context) {
                         resource,
                         service: 'uipath-dispatcher'
                     });
-                    
-                    // Use EnhancedForwarder to get the most recently modified item
+
+                    // Use EnhancedForwarder to get ALL recently modified items
+                    // This handles the case where multiple files are uploaded simultaneously
+                    // Using 5-minute window (300 seconds) since deduplication prevents re-processing
                     const forwarder = new EnhancedForwarder(context, accessToken);
-                    const recentItem = await forwarder.getItemData(resource, null);
-                    
-                    if (recentItem && recentItem.id) {
-                        logger.info('Found recently modified item', {
-                            itemId: recentItem.id,
-                            title: recentItem.fields?.Title,
-                            modified: recentItem.lastModifiedDateTime,
+                    const recentItems = await forwarder.getRecentItems(resource, 300);
+
+                    if (recentItems && recentItems.length > 0) {
+                        logger.info('Found multiple recently modified items', {
+                            count: recentItems.length,
+                            items: recentItems.map(i => ({
+                                id: i.id,
+                                title: i.fields?.Title || i.fields?.FileLeafRef,
+                                modified: i.lastModifiedDateTime
+                            })),
                             service: 'uipath-dispatcher'
                         });
-                        
-                        // Merge fields into the main item object for easier access
-                        if (recentItem.fields) {
-                            Object.assign(recentItem, recentItem.fields);
+
+                        // Return first item but attach the full list for batch processing
+                        const firstItem = recentItems[0];
+                        if (firstItem.fields) {
+                            Object.assign(firstItem, firstItem.fields);
                         }
-                        
-                        return recentItem;
+
+                        // Attach all items for the caller to process
+                        firstItem._allRecentItems = recentItems;
+
+                        return firstItem;
                     } else {
-                        logger.warn('Could not find recently modified item', {
+                        logger.warn('Could not find recently modified items', {
                             resource,
                             service: 'uipath-dispatcher'
                         });

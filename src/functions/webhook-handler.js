@@ -599,7 +599,9 @@ function shouldRouteToUiPath(clientState) {
 
     // Check for UiPath processor indicator in clientState
     const lowercaseState = clientState.toLowerCase();
-    return lowercaseState.includes('processor:uipath') ||
+    return lowercaseState.includes('destination:uipath') ||  // New format
+           lowercaseState.includes('dest:uipath') ||         // Abbreviated format
+           lowercaseState.includes('processor:uipath') ||    // Legacy format
            lowercaseState.includes('uipath:enabled') ||
            lowercaseState.includes('uipath=true') ||
            lowercaseState.includes('uipath:'); // Matches any UiPath queue specification

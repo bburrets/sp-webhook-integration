@@ -26,6 +26,12 @@ class UiPathAuth {
     constructor(context = null, configOverrides = null) {
         this.logger = createLogger(context);
 
+        // Debug: Log what we received
+        this.logger.debug('UiPathAuth constructor received configOverrides', {
+            hasConfigOverrides: !!configOverrides,
+            configKeys: configOverrides ? Object.keys(configOverrides) : []
+        });
+
         // Apply configuration overrides for multi-environment support
         const effectiveConfig = configOverrides || config.uipath;
 
