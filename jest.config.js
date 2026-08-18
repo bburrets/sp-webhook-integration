@@ -26,7 +26,7 @@ module.exports = {
     },
     
     // Transform files
-    transform: {},
+    // (no transform override — jest default babel-jest is required for jest.mock hoisting)
     
     // Module name mapper for path aliases
     moduleNameMapper: {

@@ -165,7 +165,7 @@ describe('generic-document-processor', () => {
                 const item = { ID: 1, FileLeafRef: 'My Document, Version 2.pdf' };
                 const reference = processor.buildReference(item);
 
-                expect(reference).toBe('SPDOC_My_Document__Version_2.pdf_1_1234567890');
+                expect(reference).toBe('SPDOC_My_Document_Version_2.pdf_1_1234567890');
             });
 
             it('should handle missing ID and filename', () => {

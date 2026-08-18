@@ -12,6 +12,7 @@ const { UIPATH_PRIORITY } = require('./constants');
 class DynamicUiPathQueueClient {
     constructor(context = null, configOverrides = null) {
         this.logger = createLogger(context);
+        this.context = context;
         this.baseClient = createUiPathQueueClient(context, configOverrides);
     }
 

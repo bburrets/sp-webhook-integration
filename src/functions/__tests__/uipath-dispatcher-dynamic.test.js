@@ -55,7 +55,7 @@ jest.mock('../../shared/auth', () => ({
     getAccessToken: jest.fn(() => Promise.resolve('mock-access-token'))
 }));
 
-jest.mock('./uipath-dispatcher', () => ({
+jest.mock('../uipath-dispatcher', () => ({
     shouldProcessForUiPath: jest.fn((clientState) => {
         return clientState && clientState.includes('processor:uipath');
     }),
@@ -140,7 +140,7 @@ describe('uipath-dispatcher-dynamic', () => {
         });
 
         it('should skip when unable to fetch SharePoint item', async () => {
-            const { fetchSharePointItem } = require('./uipath-dispatcher');
+            const { fetchSharePointItem } = require('../uipath-dispatcher');
             fetchSharePointItem.mockResolvedValueOnce(null);
 
             const notification = {
@@ -331,7 +331,7 @@ describe('uipath-dispatcher-dynamic', () => {
                 }
             };
 
-            const { fetchSharePointItem } = require('./uipath-dispatcher');
+            const { fetchSharePointItem } = require('../uipath-dispatcher');
             fetchSharePointItem.mockResolvedValueOnce({
                 ID: '15',
                 Title: 'COSTCO Routing Form',
@@ -358,7 +358,7 @@ describe('uipath-dispatcher-dynamic', () => {
                 }
             };
 
-            const { fetchSharePointItem } = require('./uipath-dispatcher');
+            const { fetchSharePointItem } = require('../uipath-dispatcher');
             fetchSharePointItem.mockResolvedValueOnce({
                 id: 'invoice-001',
                 FileLeafRef: 'invoice-2025-001.pdf',
