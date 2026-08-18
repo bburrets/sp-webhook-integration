@@ -122,6 +122,26 @@ describe('uipath-processor-registry', () => {
 
             expect(tokens).toEqual(['processor:uipath']);
         });
+
+        it('should detect the pipe separator for the live production format and produce the exact token array', () => {
+            const tokens = parseClientState('destination:uipath|handler:costco|tenant:PROD');
+
+            expect(tokens).toEqual([
+                'destination:uipath',
+                'handler:costco',
+                'tenant:prod'
+            ]);
+        });
+
+        it('should detect the semicolon separator for the legacy format and produce the exact token array', () => {
+            const tokens = parseClientState('processor:uipath;uipath:Queue;env:DEV');
+
+            expect(tokens).toEqual([
+                'processor:uipath',
+                'uipath:queue',
+                'env:dev'
+            ]);
+        });
     });
 
     describe('registerProcessor', () => {

@@ -262,6 +262,14 @@ describe('uipath-dispatcher-dynamic', () => {
         });
 
         it('should handle processor errors gracefully', async () => {
+            // Use the real registry/resolveProcessor (costco matcher picks this up via the
+            // 'costco:routing' token), but make the mocked template's processItem reject so we
+            // exercise the catch block in processNotification (uipath-dispatcher-dynamic.js:258-270).
+            const { createCostcoProcessor } = require('../../templates/costco-inline-routing');
+            createCostcoProcessor.mockImplementationOnce(() => ({
+                processItem: jest.fn().mockRejectedValueOnce(new Error('Processing failed'))
+            }));
+
             const notification = {
                 subscriptionId: 'sub-error-test',
                 resource: 'sites/example.sharepoint.com:/sites/costco:/lists/123',
@@ -272,13 +280,20 @@ describe('uipath-dispatcher-dynamic', () => {
                 }
             };
 
-            // With real resolveProcessor and mocked templates, processor error handling is tested
-            // through the actual template mocks. For now, verify that the real processor resolves
-            // and processes successfully (error scenarios can be tested via template mock updates)
             const result = await processNotification(notification, mockContext, mockLogger);
 
-            // Verify the processor was resolved for COSTCO routing
+            expect(result.processed).toBe(false);
+            expect(result.subscriptionId).toBe('sub-error-test');
             expect(result.processor).toBe('costco-inline-routing');
+            expect(result.error).toBe('Processing failed');
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                'Dynamic UiPath processor failed',
+                expect.objectContaining({
+                    subscriptionId: 'sub-error-test',
+                    processor: 'costco-inline-routing',
+                    error: 'Processing failed'
+                })
+            );
         });
 
         it('should log webhook processing start', async () => {
