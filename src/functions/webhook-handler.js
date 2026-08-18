@@ -653,10 +653,20 @@ async function routeToUiPathDispatcher(notification, context) {
 
         // Process notification using UiPath dynamic dispatcher logic
         const result = await processUiPathNotification(notification, context, logger);
-        
+
+        // processUiPathNotification never throws: it catches everything and reports failure
+        // by returning an `error` field. Hardcoding success:true here meant a failed UiPath
+        // submission was reported as a success, the worker never rethrew, and the queue
+        // deleted the message -- losing the document silently.
+        //
+        // `processed: false` alone is NOT a failure. Legitimate non-failures return it with a
+        // `reason` and no `error` ('UiPath processing not requested', 'Unable to resolve
+        // SharePoint item', 'No matching UiPath processor registered', 'All items were recently
+        // processed (deduplication)'). Only a truthy `error` means the dispatch actually failed.
         return {
-            success: true,
+            success: !result.error,
             processed: result.processed,
+            error: result.error || null,
             result: result
         };
         

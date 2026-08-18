@@ -241,20 +241,41 @@ async function processNotification(notification, context, logger) {
             };
         }
 
-        // For bulk processing, return summary
+        // For bulk processing, return summary.
+        // Templates report failure by RETURNING { processed: false, error } rather than
+        // throwing (see costco-inline-routing.js processItem catch), so a per-item error
+        // must be surfaced at the top level here. Without this the bulk summary carries no
+        // `error` field and the caller (routeToUiPathDispatcher) would read the batch as a
+        // success, deleting the queue message and losing the failed documents.
+        const failedResults = results.filter(r => r.error);
         logger.info('Returning bulk processing summary', {
             totalItems: results.length,
             processedCount: results.filter(r => r.processed).length,
+            failedCount: failedResults.length,
             subscriptionId
         });
 
-        return {
+        const summary = {
             processed: results.every(r => r.processed),
             itemsProcessed: results.length,
             results,
             subscriptionId,
             processor: descriptor.name
         };
+
+        if (failedResults.length > 0) {
+            summary.error = failedResults
+                .map(r => `item ${r.itemId}: ${r.error}`)
+                .join('; ');
+            logger.error('Bulk processing had item failures', {
+                subscriptionId,
+                processor: descriptor.name,
+                failedCount: failedResults.length,
+                error: summary.error
+            });
+        }
+
+        return summary;
     } catch (error) {
         logger.error('Dynamic UiPath processor failed', {
             subscriptionId,

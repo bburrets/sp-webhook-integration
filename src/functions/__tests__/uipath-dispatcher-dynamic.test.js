@@ -296,6 +296,72 @@ describe('uipath-dispatcher-dynamic', () => {
             );
         });
 
+        it('should surface a top-level error when a bulk batch has item failures', async () => {
+            // Templates report failure by RETURNING { processed: false, error } (see
+            // costco-inline-routing.js processItem). Without aggregation the bulk summary
+            // carries no top-level `error`, and routeToUiPathDispatcher reads the whole batch
+            // as a success -- deleting the queue message and losing the failed documents.
+            const { createCostcoProcessor } = require('../../templates/costco-inline-routing');
+            createCostcoProcessor.mockImplementationOnce(() => ({
+                processItem: jest.fn()
+                    .mockResolvedValueOnce({
+                        processed: true,
+                        queueSubmission: { success: true, queueItemId: 'q-1', reference: 'REF-1' }
+                    })
+                    .mockResolvedValueOnce({
+                        processed: false,
+                        error: 'Request failed with status code 500',
+                        itemId: 'item-b',
+                        template: 'costco'
+                    })
+            }));
+
+            const { fetchSharePointItem } = require('../uipath-dispatcher');
+            fetchSharePointItem.mockResolvedValueOnce({
+                ID: 'item-a',
+                Title: 'First',
+                _allRecentItems: [
+                    { id: 'item-a', Title: 'First' },
+                    { id: 'item-b', Title: 'Second' }
+                ]
+            });
+
+            const result = await processNotification({
+                subscriptionId: 'sub-bulk-partial',
+                resource: 'sites/example.sharepoint.com:/sites/costco:/lists/123',
+                clientState: 'processor:uipath;costco:routing',
+                resourceData: { '@odata.type': '#Microsoft.Graph.ListItem', id: 'item-a' }
+            }, mockContext, mockLogger);
+
+            expect(result.itemsProcessed).toBe(2);
+            expect(result.processed).toBe(false);
+            expect(result.error).toContain('Request failed with status code 500');
+            expect(result.error).toContain('item-b');
+        });
+
+        it('should not set a top-level error when every item in a bulk batch succeeds', async () => {
+            const { fetchSharePointItem } = require('../uipath-dispatcher');
+            fetchSharePointItem.mockResolvedValueOnce({
+                ID: 'item-a',
+                Title: 'First',
+                _allRecentItems: [
+                    { id: 'item-a', Title: 'First' },
+                    { id: 'item-b', Title: 'Second' }
+                ]
+            });
+
+            const result = await processNotification({
+                subscriptionId: 'sub-bulk-ok',
+                resource: 'sites/example.sharepoint.com:/sites/costco:/lists/123',
+                clientState: 'processor:uipath;costco:routing',
+                resourceData: { '@odata.type': '#Microsoft.Graph.ListItem', id: 'item-a' }
+            }, mockContext, mockLogger);
+
+            expect(result.itemsProcessed).toBe(2);
+            expect(result.processed).toBe(true);
+            expect(result.error).toBeUndefined();
+        });
+
         it('should log webhook processing start', async () => {
             const notification = {
                 subscriptionId: 'sub-log-test',
