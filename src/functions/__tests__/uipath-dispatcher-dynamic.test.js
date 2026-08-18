@@ -57,7 +57,8 @@ jest.mock('../../shared/auth', () => ({
 
 jest.mock('../uipath-dispatcher', () => ({
     shouldProcessForUiPath: jest.fn((clientState) => {
-        return clientState && clientState.includes('processor:uipath');
+        // Support both legacy format (processor:uipath;...) and new format (destination:uipath|...)
+        return clientState && (clientState.includes('processor:uipath') || clientState.includes('destination:uipath'));
     }),
     fetchSharePointItem: jest.fn((resource, resourceData, context) => {
         // Mock SharePoint item response
@@ -72,7 +73,28 @@ jest.mock('../uipath-dispatcher', () => ({
 
 jest.mock('../../shared/uipath-processor-registry', () => ({
     resolveProcessor: jest.fn(({ clientState, resource, item }) => {
-        if (clientState?.includes('costco') || resource?.toLowerCase().includes('costco')) {
+        // Parse clientState tokens (supports both | and ; delimiters)
+        let tokens = [];
+        if (clientState) {
+            const separator = clientState.includes('|') ? '|' : ';';
+            tokens = clientState.split(separator).map(s => s.trim().toLowerCase()).filter(Boolean);
+        }
+
+        // Check for COSTCO routing
+        const isCostco = tokens.some(token =>
+            token.includes('costco') ||
+            token.includes('handler:costco') ||
+            token.includes('processor:costco')
+        ) || (resource && resource.toLowerCase().includes('costco'));
+
+        // Check for generic document
+        const isDocument = tokens.some(token =>
+            token.includes('document') ||
+            token.includes('handler:document') ||
+            token.includes('processor:document')
+        );
+
+        if (isCostco) {
             return {
                 name: 'costco-inline-routing',
                 factory: (context) => ({
@@ -83,7 +105,7 @@ jest.mock('../../shared/uipath-processor-registry', () => ({
                 })
             };
         }
-        if (clientState?.includes('document')) {
+        if (isDocument) {
             return {
                 name: 'generic-document',
                 factory: (context) => ({
@@ -98,7 +120,9 @@ jest.mock('../../shared/uipath-processor-registry', () => ({
     }),
     parseClientState: jest.fn((clientState) => {
         if (!clientState) return [];
-        return clientState.toLowerCase().split(';').map(s => s.trim()).filter(Boolean);
+        // Support both legacy format (;) and new format (|)
+        const separator = clientState.includes('|') ? '|' : ';';
+        return clientState.split(separator).map(s => s.trim()).filter(Boolean).map(s => s.toLowerCase());
     })
 }));
 
@@ -338,10 +362,11 @@ describe('uipath-dispatcher-dynamic', () => {
 
     describe('Integration scenarios', () => {
         it('should handle COSTCO routing form notification', async () => {
+            // Live production clientState and subscriptionId from active webhook subscription 023a2ed7-c5c3-4b85-bf76-24a1baf30474
             const notification = {
-                subscriptionId: '07c6db43-15c9-4074-a40c-c5576c2f2011',
+                subscriptionId: '023a2ed7-c5c3-4b85-bf76-24a1baf30474',
                 resource: 'sites/fambrandsllc.sharepoint.com:/sites/DWI:/lists/9e35f709-48be-4995-8b28-79730ad12b89',
-                clientState: 'processor:uipath;processor:costco;uipath:Trafficking Request Email Trigger_Queue;env:DEV;folder:277500;config:AzureFunctionApp',
+                clientState: 'destination:uipath|handler:costco|queue:Trafficking_Request_Email_Trigger_Queue|tenant:PROD|folder:376892',
                 changeType: 'updated',
                 resourceData: {
                     '@odata.type': '#Microsoft.Graph.ListItem',
