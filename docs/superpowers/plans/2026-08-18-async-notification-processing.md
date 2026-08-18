@@ -15,7 +15,7 @@
 - The `validationToken` handshake MUST keep returning HTTP **200**, `Content-Type: text/plain`, body = the raw token. This is the subscription-creation path.
 - Do NOT change UiPath processors, templates, or queue payload shape.
 - Do NOT change the `SPDOC_` reference format — live queue items already use it.
-- `ASYNC_PROCESSING` defaults to **absent/false**; behavior with the flag off must be byte-for-byte today's behavior through Task 6. Task 7 intentionally changes shared behavior and is sequenced after production verification for exactly that reason.
+- `ASYNC_PROCESSING` defaults to **absent/false**; behavior with the flag off must be byte-for-byte today's behavior through Task 7. Task 8 intentionally changes shared behavior and is sequenced after production verification for exactly that reason.
 - Queue name: `webhook-notifications`. Connection setting: `AzureWebJobsStorage`.
 - Rollback package (current production): `20260105174917-9806a121-fca5-4e37-bf07-fb0be0b429c5.zip` in container `function-releases` of storage account `webhookstorageacct002`.
 - Production currently runs commit `945b958`; the deployed `src/` was diffed against repo HEAD and matches exactly.
@@ -669,7 +669,249 @@ check for the same item and double-submit. batchSize 1 serializes processing;
 throughput is not a concern at ~400 documents/day."
 ```
 
-### Task 5: Capture rollback state and deploy with the flag off
+### Task 5: Propagate processing failures so the queue can retry
+
+Building Tasks 3 and 4 surfaced that the queue's retry/poison capability — the design's stated
+recovery benefit — is **not actually delivered**. Two independent paths swallow failures before
+the worker's rethrow can see them:
+
+1. `routeToUiPathDispatcher` (webhook-handler.js) catches all errors and returns
+   `{ success: false, error }` without throwing. `processNotification`'s inner catch then logs
+   *"Continue processing even if UiPath routing fails"* and continues. `processNotification`
+   returns `undefined`.
+2. `enrichNotificationsWithClientState` catches its own Graph fetch failure and returns the
+   **original unenriched** notifications. Without `clientState`, `shouldRouteToUiPath()` is
+   false, so the item is silently skipped.
+
+In both cases the worker sees success, the queue message is deleted, and nothing retries or
+poisons. This is not a regression — today's inline path swallows identically — but it means a
+UiPath or Graph outage silently drops documents, which is the exact failure this plan exists to
+prevent.
+
+**The fix must be additive.** Flag-off behavior must remain byte-for-byte identical through the
+production verification in Task 7, so neither change may alter inline control flow or responses.
+Returning a value that the inline caller ignores is safe; throwing where it previously did not is
+not.
+
+**Files:**
+- Modify: `src/functions/webhook-handler.js` — `processNotification` return value; `enrichNotificationsWithClientState` optional throw
+- Modify: `src/functions/notification-worker.js` — inspect the result and throw
+- Modify: `src/functions/__tests__/notification-worker.test.js` — cover the new rethrow paths
+
+**Interfaces:**
+- Consumes: `processNotification`, `enrichNotificationsWithClientState` from Task 2
+- Produces:
+  - `processNotification(notification, context)` now resolves to
+    `{ subscriptionId, uipath: { attempted: boolean, success: boolean, error: string|null } }`
+  - `enrichNotificationsWithClientState(notifications, context, options)` where
+    `options.throwOnFailure === true` rethrows instead of returning unenriched notifications.
+    Default (omitted / false) preserves today's swallow exactly.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `src/functions/__tests__/notification-worker.test.js`, inside the outer describe:
+
+```js
+    describe('failure propagation', () => {
+        it('throws when UiPath dispatch failed so the queue retries', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-1',
+                uipath: { attempted: true, success: false, error: 'Queue does not exist' }
+            });
+
+            await expect(
+                handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-1' }), context)
+            ).rejects.toThrow('Queue does not exist');
+        });
+
+        it('does not throw when UiPath dispatch succeeded', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-2',
+                uipath: { attempted: true, success: true, error: null }
+            });
+
+            await expect(
+                handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-2' }), context)
+            ).resolves.toBeUndefined();
+        });
+
+        it('does not throw when UiPath was never attempted', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-3',
+                uipath: { attempted: false, success: false, error: null }
+            });
+
+            await expect(
+                handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-3' }), context)
+            ).resolves.toBeUndefined();
+        });
+
+        it('requests throwing enrichment so a Graph failure retries', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-4',
+                uipath: { attempted: false, success: false, error: null }
+            });
+
+            await handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-4' }), context);
+
+            expect(enrichNotificationsWithClientState).toHaveBeenCalledWith(
+                expect.any(Array),
+                context,
+                { throwOnFailure: true }
+            );
+        });
+    });
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `npx jest src/functions/__tests__/notification-worker.test.js`
+Expected: FAIL — the worker does not yet inspect the result or pass options.
+
+- [ ] **Step 3: Make processNotification report the UiPath outcome**
+
+In `src/functions/webhook-handler.js`, inside `processNotification`, declare a tracker immediately
+before the `// Check if this notification should be routed to UiPath dispatcher` comment:
+
+```js
+        const uipathOutcome = { attempted: false, success: false, error: null };
+```
+
+Then, within that `if (clientState && shouldRouteToUiPath(clientState))` block, record the outcome
+without changing any existing control flow. Set `uipathOutcome.attempted = true;` as the first
+statement inside the `try`. In the `if (uiPathResult.success)` branch add
+`uipathOutcome.success = true;`. In its `else` branch add
+`uipathOutcome.error = uiPathResult.error || 'UiPath dispatch reported failure';`. In the
+`catch (uiPathError)` block add `uipathOutcome.error = uiPathError.message;`.
+
+Do NOT add, remove, or reorder any existing statement, and do NOT add a `throw`.
+
+- [ ] **Step 4: Return the result**
+
+Still in `processNotification`, replace the final logging call before the closing `catch`:
+
+```js
+        logger.logWebhook('processed', notification.subscriptionId, {
+            resource: notification.resource,
+            changeType: notification.changeType
+        });
+```
+
+with:
+
+```js
+        logger.logWebhook('processed', notification.subscriptionId, {
+            resource: notification.resource,
+            changeType: notification.changeType
+        });
+
+        // Returned for the queue worker's benefit. The inline path ignores this value,
+        // so flag-off behavior is unchanged.
+        return {
+            subscriptionId: notification.subscriptionId,
+            uipath: uipathOutcome
+        };
+```
+
+- [ ] **Step 5: Add the optional throwing mode to enrichment**
+
+Change the signature at `src/functions/webhook-handler.js`:
+
+```js
+async function enrichNotificationsWithClientState(notifications, context) {
+```
+
+to:
+
+```js
+async function enrichNotificationsWithClientState(notifications, context, options = {}) {
+```
+
+Then in its `catch` block, immediately before the existing `return notifications;`, insert:
+
+```js
+        // The queue worker opts into throwing so a Graph failure retries instead of
+        // silently processing an unenriched notification. The inline path does not.
+        if (options.throwOnFailure) {
+            throw error;
+        }
+
+```
+
+Leave the existing comment and `return notifications;` in place for the default path.
+
+- [ ] **Step 6: Make the worker act on both**
+
+In `src/functions/notification-worker.js`, change:
+
+```js
+    const [enriched] = await enrichNotificationsWithClientState([notification], context);
+
+    await processNotification(enriched, context);
+```
+
+to:
+
+```js
+    const [enriched] = await enrichNotificationsWithClientState(
+        [notification],
+        context,
+        { throwOnFailure: true }
+    );
+
+    const result = await processNotification(enriched, context);
+
+    // A swallowed dispatch failure would let the queue delete this message and lose the
+    // item silently. Rethrow so the message retries and eventually poisons instead.
+    if (result?.uipath?.attempted && !result.uipath.success) {
+        throw new Error(result.uipath.error || 'UiPath dispatch failed');
+    }
+```
+
+- [ ] **Step 7: Run the worker tests**
+
+Run: `npx jest src/functions/__tests__/notification-worker.test.js`
+Expected: PASS, 7 tests
+
+- [ ] **Step 8: Run the full suite**
+
+Run: `npx jest 2>&1 | tail -5`
+Expected: `Tests: 170 passed, 170 total`, 10 suites
+
+- [ ] **Step 9: Prove flag-off behavior is unchanged**
+
+The inline path must not have changed. Confirm the handler ignores the new return value and that
+no new `throw` reaches it:
+
+Run: `grep -n "await processNotification" src/functions/webhook-handler.js`
+Expected: the inline loop still reads `await processNotification(notification, context);` with no
+assignment — the returned object is discarded.
+
+Run: `grep -n "throwOnFailure" src/functions/webhook-handler.js`
+Expected: exactly one hit, inside the `catch` of `enrichNotificationsWithClientState`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add src/functions/webhook-handler.js src/functions/notification-worker.js \
+        src/functions/__tests__/notification-worker.test.js
+git commit -m "fix: propagate processing failures so the queue can retry
+
+The queue's retry/poison capability was not actually reachable: UiPath dispatch
+failures were swallowed by routeToUiPathDispatcher and processNotification's
+inner catch, and enrichment failures returned unenriched notifications that were
+then silently skipped. In both cases the worker saw success and the message was
+deleted, losing the item.
+
+processNotification now reports the UiPath outcome and the worker rethrows on
+failure; enrichment gains an opt-in throwing mode the worker uses. Both changes
+are additive - the inline path ignores the return value and does not opt in - so
+flag-off behavior stays byte-for-byte identical for rollback."
+```
+
+---
+
+### Task 6: Capture rollback state and deploy with the flag off
 
 This task makes no code changes. Its deliverable is a verified no-op deployment plus a recorded rollback point.
 
@@ -777,12 +1019,12 @@ git commit -m "docs: record rollback state for async processing deploy"
 
 ---
 
-### Task 6: Enable async processing and verify
+### Task 7: Enable async processing and verify
 
 **Files:** none (operational)
 
 **Interfaces:**
-- Consumes: Task 5's deployment
+- Consumes: Task 6's deployment
 - Produces: async path live in production
 
 - [ ] **Step 1: Enable the flag**
@@ -841,9 +1083,9 @@ Then follow `docs/superpowers/plans/rollback-state-2026-08-18.md`.
 
 ---
 
-### Task 7: Remove the in-memory loop map
+### Task 8: Remove the in-memory loop map
 
-Only after Task 6 is verified stable. Deferred to here so that flag-off behavior stayed
+Only after Task 7 is verified stable. Deferred to here so that flag-off behavior stayed
 byte-for-byte today's behavior throughout the deploy-and-enable window.
 
 The module-level `recentNotifications` map drops any notification arriving within 10 seconds of
@@ -856,7 +1098,7 @@ deduplicator, which works per-item and survives across instances.
 - Modify: `src/shared/config.js` — remove the now-unused `loopPreventionWindow` entry
 
 **Interfaces:**
-- Consumes: verified async path from Task 6
+- Consumes: verified async path from Task 7
 - Produces: no signature changes
 
 - [ ] **Step 1: Delete the map declaration**
@@ -948,9 +1190,9 @@ Upload a document to the Accounting_Research library and confirm it produces a q
 
 ---
 
-### Task 8: Widen the lookback window
+### Task 9: Widen the lookback window
 
-Only after Task 6 is verified stable. This is what actually recovers the loss: with the handler no longer throttled, a wider window closes any gap that does occur.
+Only after Task 7 is verified stable. This is what actually recovers the loss: with the handler no longer throttled, a wider window closes any gap that does occur.
 
 **Files:**
 - Modify: `src/functions/uipath-dispatcher.js:313`
@@ -1000,13 +1242,13 @@ After the next burst, confirm the number of queue items created is not inflated 
 
 ---
 
-### Task 9: Raise the fetch ceiling
+### Task 10: Raise the fetch ceiling
 
 **Files:**
 - Modify: `src/shared/enhanced-forwarder.js:63`, `:96`
 
 **Interfaces:**
-- Consumes: Tasks 6, 7 and 8 verified
+- Consumes: Tasks 7, 8 and 9 verified
 - Produces: no signature changes
 
 Verified against the live library: Graph honors `$orderby=lastModifiedDateTime desc` on SharePoint listItems despite the published reference listing only `$filter` and `$expand`, and `$top=200` is honored with `@odata.nextLink` present. Maximum observed occupancy of a 300-second window was 100 items, so a single 200-item page covers observed traffic.
