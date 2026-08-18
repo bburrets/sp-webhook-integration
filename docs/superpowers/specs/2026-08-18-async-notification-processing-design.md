@@ -112,6 +112,7 @@ const queueOutput = output.storageQueue({
 });
 
 // app.http('webhook-handler', { ..., extraOutputs: [queueOutput], handler: ... })
+const receivedAt = new Date().toISOString();
 context.extraOutputs.set(queueOutput, notifications.map(n => JSON.stringify({ ...n, receivedAt })));
 return { status: 202, body: 'Accepted' };
 ```
@@ -182,6 +183,12 @@ Verified facts underpinning this plan:
 
 `ASYNC_PROCESSING` app setting gates the split. When `false`, the handler processes inline
 exactly as today. Default **false** on first deploy.
+
+Both code paths therefore coexist during rollout: the existing inline path is retained behind
+the flag rather than deleted. The `notification-worker` is deployed regardless and simply idles
+while the flag is `false`, since nothing is being enqueued. Deleting the inline path and the
+flag is a follow-up cleanup once the async path has run stably, so the code does not carry two
+paths indefinitely.
 
 ### Layer 2 — package rollback (minutes)
 
