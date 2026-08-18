@@ -36,9 +36,19 @@ async function handleQueueMessage(message, context) {
 
     // clientState is not returned by Graph, so it is looked up here rather than
     // on the request path where the extra Graph call would cost response time.
-    const [enriched] = await enrichNotificationsWithClientState([notification], context);
+    const [enriched] = await enrichNotificationsWithClientState(
+        [notification],
+        context,
+        { throwOnFailure: true }
+    );
 
-    await processNotification(enriched, context);
+    const result = await processNotification(enriched, context);
+
+    // A swallowed dispatch failure would let the queue delete this message and lose the
+    // item silently. Rethrow so the message retries and eventually poisons instead.
+    if (result?.uipath?.attempted && !result.uipath.success) {
+        throw new Error(result.uipath.error || 'UiPath dispatch failed');
+    }
 
     logger.info('Queued notification processed', {
         subscriptionId: notification.subscriptionId

@@ -44,4 +44,54 @@ describe('notification-worker', () => {
             handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-3' }), context)
         ).rejects.toThrow('UiPath submission failed');
     });
+
+    describe('failure propagation', () => {
+        it('throws when UiPath dispatch failed so the queue retries', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-1',
+                uipath: { attempted: true, success: false, error: 'Queue does not exist' }
+            });
+
+            await expect(
+                handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-1' }), context)
+            ).rejects.toThrow('Queue does not exist');
+        });
+
+        it('does not throw when UiPath dispatch succeeded', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-2',
+                uipath: { attempted: true, success: true, error: null }
+            });
+
+            await expect(
+                handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-2' }), context)
+            ).resolves.toBeUndefined();
+        });
+
+        it('does not throw when UiPath was never attempted', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-3',
+                uipath: { attempted: false, success: false, error: null }
+            });
+
+            await expect(
+                handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-3' }), context)
+            ).resolves.toBeUndefined();
+        });
+
+        it('requests throwing enrichment so a Graph failure retries', async () => {
+            processNotification.mockResolvedValueOnce({
+                subscriptionId: 'sub-4',
+                uipath: { attempted: false, success: false, error: null }
+            });
+
+            await handleQueueMessage(JSON.stringify({ subscriptionId: 'sub-4' }), context);
+
+            expect(enrichNotificationsWithClientState).toHaveBeenCalledWith(
+                expect.any(Array),
+                context,
+                { throwOnFailure: true }
+            );
+        });
+    });
 });

@@ -199,29 +199,35 @@ async function processNotification(notification, context) {
             listId: resourceData?.listId
         });
 
+        const uipathOutcome = { attempted: false, success: false, error: null };
+
         // Check if this notification should be routed to UiPath dispatcher
         if (clientState && shouldRouteToUiPath(clientState)) {
             try {
+                uipathOutcome.attempted = true;
                 logger.info('Routing notification to UiPath dynamic dispatcher', {
                     subscriptionId,
                     clientState
                 });
-                
+
                 // Route to UiPath dispatcher
                 const uiPathResult = await routeToUiPathDispatcher(notification, context);
-                
+
                 if (uiPathResult.success) {
+                    uipathOutcome.success = true;
                     logger.info('Successfully routed to UiPath dynamic dispatcher', {
                         subscriptionId,
                         processed: uiPathResult.processed
                     });
                 } else {
+                    uipathOutcome.error = uiPathResult.error || 'UiPath dispatch reported failure';
                     logger.error('UiPath dynamic dispatcher routing failed', {
                         subscriptionId,
                         error: uiPathResult.error
                     });
                 }
             } catch (uiPathError) {
+                uipathOutcome.error = uiPathError.message;
                 logger.error('Failed to route to UiPath dynamic dispatcher', {
                     error: uiPathError.message,
                     subscriptionId
@@ -319,6 +325,13 @@ async function processNotification(notification, context) {
             resource: notification.resource,
             changeType: notification.changeType
         });
+
+        // Returned for the queue worker's benefit. The inline path ignores this value,
+        // so flag-off behavior is unchanged.
+        return {
+            subscriptionId: notification.subscriptionId,
+            uipath: uipathOutcome
+        };
 
     } catch (error) {
         const logger = createLogger(context);
@@ -549,7 +562,7 @@ function parseClientState(clientState) {
  * @param {Object} context - Azure Functions context
  * @returns {Promise<Array>} Enriched notifications with clientState
  */
-async function enrichNotificationsWithClientState(notifications, context) {
+async function enrichNotificationsWithClientState(notifications, context, options = {}) {
     const logger = createLogger(context);
 
     try {
@@ -618,6 +631,12 @@ async function enrichNotificationsWithClientState(notifications, context) {
             error: error.message,
             stack: error.stack
         });
+
+        // The queue worker opts into throwing so a Graph failure retries instead of
+        // silently processing an unenriched notification. The inline path does not.
+        if (options.throwOnFailure) {
+            throw error;
+        }
 
         // Return original notifications if enrichment fails
         // This ensures webhook processing continues even if lookup fails
