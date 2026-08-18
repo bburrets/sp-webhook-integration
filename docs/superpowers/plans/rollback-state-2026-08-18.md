@@ -47,12 +47,38 @@ The 6 misses were all one incident on 2026-07-28.
 - Function App runs on a **Consumption (Dynamic) plan** — deployment slots are NOT available,
   so slot-swap rollback is impossible. `WEBSITE_RUN_FROM_PACKAGE` is the rollback lever.
 - Runtime is `Node|20`. Note `src/shared/constants.js` is a genuine ES module, which only loads
-  because `require(esm)` is supported on Node >= 20.19. `package.json` claims `>=18.0.0`, which
-  is inaccurate — on Node 18 the app would fail to start entirely.
+  because `require(esm)` is supported on Node >= 20.19. On Node 18, or Node 20.0-20.18, the app
+  would fail to start entirely. `package.json` previously claimed `>=18.0.0`; it is now pinned
+  to `>=20.19.0` to match reality. Do not lower that floor.
 
 ## Rollback procedure — IN THIS ORDER
 
-1. **Flip the flag off** (seconds, no redeploy):
+> **What each layer actually restores.** Layer 1 (`ASYNC_PROCESSING=false`) is a **degraded
+> fallback, not a restore.** It reverts async dispatch only — the handler goes back to
+> processing inline — but it does **not** revert the shared-path changes that shipped on this
+> branch. The in-memory loop-prevention map was deleted, and the 1500 s lookback plus
+> `$top=200` live on the SHARED code path used by both the inline and the async route. With the
+> flag off, a 5-notification batch can therefore expand to 5 x up to 200 items processed inline
+> inside a single HTTP request — potentially **worse** than the pre-branch baseline it is meant
+> to restore, and at real risk of blowing Graph's 3-second response deadline.
+>
+> **Layer 2 (repointing `WEBSITE_RUN_FROM_PACKAGE` to
+> `20260105174917-9806a121-fca5-4e37-bf07-fb0be0b429c5.zip`) is the only true restore to
+> pre-branch behavior.** If the problem is the async machinery itself, Layer 1 is the right
+> first move. If the problem is inline processing volume, latency, or duplicate submissions,
+> Layer 1 will not help and may hurt — go to Layer 2.
+>
+> **Layer 1 now also surrenders the retry guarantee.** The queue's retry/poison behavior exists
+> only on the async path. With the flag off, `processNotification`'s return value is discarded by
+> the inline loop: a failed UiPath dispatch is logged and execution continues, Graph receives its
+> 200, and the notification is gone with no retry. This is newly true as of the C1 fix — before
+> it, failures were not propagating on either path. So flipping the flag off trades away failure
+> retry, not just async dispatch.
+>
+> The step ordering below still stands regardless: the queue must be drained before the package
+> is rolled back.
+
+1. **Flip the flag off** (seconds, no redeploy) — degraded fallback, see the note above:
 
 ```bash
 az functionapp config appsettings set \
@@ -68,7 +94,9 @@ az storage message peek --queue-name webhook-notifications \
   --account-name webhookstorageacct002 --auth-mode key --num-messages 1 -o table
 ```
 
-3. **Only if still broken**, repoint the package and restart:
+3. **Repoint the package and restart** — this is the only true restore to pre-branch
+   behavior, and is required (not merely optional) whenever the fault is in inline processing
+   volume, latency, or duplicate submissions rather than in the async machinery:
 
 ```bash
 az functionapp config appsettings set \

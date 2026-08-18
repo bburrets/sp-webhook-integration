@@ -179,10 +179,29 @@ Verified facts underpinning this plan:
 - That package's `src/` was diffed against repo HEAD and **matches exactly** (only `__tests__/`
   and `utilities/` differ, both excluded by `.funcignore`). Production == commit `945b958`.
 
-### Layer 1 — config toggle (seconds, no redeploy)
+### Layer 1 — config toggle (seconds, no redeploy) — DEGRADED FALLBACK, NOT A RESTORE
 
-`ASYNC_PROCESSING` app setting gates the split. When `false`, the handler processes inline
-exactly as today. Default **false** on first deploy.
+`ASYNC_PROCESSING` app setting gates the split. When `false`, the handler processes inline.
+Default **false** on first deploy.
+
+**This does not restore pre-branch behavior, and the original wording ("exactly as today") is
+no longer true.** Layer 1 reverts async dispatch only. It does *not* revert the shared-path
+changes that shipped on this branch: the in-memory loop-prevention map was deleted, and the
+1500 s lookback plus `$top=200` live on the SHARED code path used by both the inline and the
+async route. With the flag off, a 5-notification batch can expand to 5 x up to 200 items
+processed inline in a single HTTP request — potentially **worse** than the pre-branch baseline
+it is meant to restore, and at real risk of exceeding Graph's 3-second response deadline.
+
+**Layer 1 now also surrenders the retry guarantee.** The queue's retry/poison behavior exists
+only on the async path. With the flag off, `processNotification`'s return value is discarded by
+the inline loop: a failed UiPath dispatch is logged and execution continues, Graph receives its
+200, and the notification is gone with no retry. This is newly true as of the C1 fix (failed
+dispatches now propagate rather than reporting success), so flipping the flag off trades away
+failure retry, not just async dispatch.
+
+Use Layer 1 when the fault is in the async machinery (worker, queue, poison behavior). When the
+fault is inline processing volume, latency, or duplicate submissions, Layer 1 will not help and
+may make things worse — go straight to Layer 2.
 
 Both code paths therefore coexist during rollout: the existing inline path is retained behind
 the flag rather than deleted. The `notification-worker` is deployed regardless and simply idles
@@ -190,10 +209,13 @@ while the flag is `false`, since nothing is being enqueued. Deleting the inline 
 flag is a follow-up cleanup once the async path has run stably, so the code does not carry two
 paths indefinitely.
 
-### Layer 2 — package rollback (minutes)
+### Layer 2 — package rollback (minutes) — THE ONLY TRUE RESTORE
 
-Repoint `WEBSITE_RUN_FROM_PACKAGE` to the package above and restart. Returns to byte-identical
-current production code.
+Repoint `WEBSITE_RUN_FROM_PACKAGE` to
+`20260105174917-9806a121-fca5-4e37-bf07-fb0be0b429c5.zip` and restart. Returns to
+byte-identical pre-branch production code (commit `945b958`), including the shared-path
+behavior that Layer 1 leaves in place. This is the only lever that actually restores pre-branch
+behavior.
 
 **Ordering requirement:** flip `ASYNC_PROCESSING=false` first and wait for queue depth to reach
 zero before rolling back the package. Rolling back the package removes the worker function, and
@@ -225,6 +247,10 @@ All work on `fix/async-notification-processing`. No direct commits to `main`.
 
 - Lookback `300s` → `1800s` in `getRecentItems`. Would have caught the entire 2026-07-28
   incident. Safe because the 30-minute deduplicator absorbs the wider overlap.
+  **Superseded:** the value now shipped is `1500s`, not `1800s`. At 1800s the lookback equalled
+  the dedup window exactly, leaving zero margin — elapsed time inside a 200-item batch loop can
+  push an item's dedup check past the 30-minute boundary, causing a resubmission and a duplicate
+  financial document. The 300s gap absorbs that per-item check latency.
 - `$top` `20` → `200` in `src/shared/enhanced-forwarder.js:63,96`. Max observed occupancy in a
   300 s window is 100, so a single page covers it; `@odata.nextLink` pagination becomes optional
   insurance rather than a requirement.
