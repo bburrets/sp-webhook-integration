@@ -15,7 +15,7 @@
 - The `validationToken` handshake MUST keep returning HTTP **200**, `Content-Type: text/plain`, body = the raw token. This is the subscription-creation path.
 - Do NOT change UiPath processors, templates, or queue payload shape.
 - Do NOT change the `SPDOC_` reference format — live queue items already use it.
-- `ASYNC_PROCESSING` defaults to **absent/false**; behavior with the flag off must be byte-for-byte today's behavior.
+- `ASYNC_PROCESSING` defaults to **absent/false**; behavior with the flag off must be byte-for-byte today's behavior through Task 6. Task 7 intentionally changes shared behavior and is sequenced after production verification for exactly that reason.
 - Queue name: `webhook-notifications`. Connection setting: `AzureWebJobsStorage`.
 - Rollback package (current production): `20260105174917-9806a121-fca5-4e37-bf07-fb0be0b429c5.zip` in container `function-releases` of storage account `webhookstorageacct002`.
 - Production currently runs commit `945b958`; the deployed `src/` was diffed against repo HEAD and matches exactly.
@@ -30,12 +30,14 @@
 | `src/functions/__tests__/uipath-dispatcher-dynamic.test.js` | Modify — fix wrong mock path |
 | `src/templates/__tests__/generic-document-processor.test.js` | Modify — correct `buildReference` expectation |
 | `src/shared/uipath-dynamic-queue-client.js` | Modify — store `this.context` |
-| `src/functions/webhook-handler.js` | Modify — queue output binding, `ASYNC_PROCESSING` branch, 202, export helpers, delete in-memory loop map |
+| `src/functions/webhook-handler.js` | Modify — queue output binding, `ASYNC_PROCESSING` branch, 202, export helpers; loop map removed in Task 7 |
 | `src/functions/notification-worker.js` | Create — storage-queue trigger delegating to `processNotification` |
 | `src/functions/__tests__/webhook-handler.test.js` | Create — handler unit tests |
 | `src/functions/__tests__/notification-worker.test.js` | Create — worker unit tests |
 | `host.json` | Modify — queue extension config (serial processing) |
-| `src/shared/enhanced-forwarder.js` | Modify (Tasks 7–8) — lookback and `$top` |
+| `src/shared/enhanced-forwarder.js` | Modify (Task 9) — `$top` ceiling |
+| `src/functions/uipath-dispatcher.js` | Modify (Task 8) — lookback window |
+| `src/shared/config.js` | Modify (Task 7) — drop orphaned `loopPreventionWindow` |
 
 ---
 
@@ -614,63 +616,22 @@ dropping work, which is what happens today."
 
 ---
 
-### Task 4: Remove the in-memory loop map and configure the queue
-
-The module-level `recentNotifications` map drops any notification arriving within 10 seconds of the previous one **for the same subscription+resource** — precisely the condition during an upload burst. It silently discards processing passes and is superseded by the Table Storage deduplicator, which works per-item and survives across instances.
+### Task 4: Configure the queue for serial processing
 
 **Files:**
-- Modify: `src/functions/webhook-handler.js:101-130` (map + loop-detection block)
 - Modify: `host.json`
 
 **Interfaces:**
 - Consumes: nothing
 - Produces: no signature changes
 
-- [ ] **Step 1: Delete the map declaration**
+> **Sequencing note.** An earlier draft of this task also deleted the in-memory
+> loop-prevention map. That was deferred to Task 7 (after the async path is verified in
+> production) so that flag-off behavior stays byte-for-byte today's behavior throughout the
+> deploy-and-enable window, preserving the Layer-1 rollback guarantee exactly when it matters
+> most.
 
-In `src/functions/webhook-handler.js`, delete these three lines:
-
-```js
-// Track recent notifications to prevent loops
-const recentNotifications = new Map();
-const LOOP_PREVENTION_WINDOW = config.webhook.loopPreventionWindow;
-```
-
-- [ ] **Step 2: Delete the loop-detection block**
-
-Inside `processNotification`, delete from the `// Create notification key for loop detection` comment through the end of the cleanup loop — that is, this entire block:
-
-```js
-        // Create notification key for loop detection
-        const notificationKey = `${notification.subscriptionId}-${notification.resource}`;
-        const now = Date.now();
-        
-        // Check if we've seen this notification recently
-        const lastSeen = recentNotifications.get(notificationKey);
-        if (lastSeen && (now - lastSeen) < LOOP_PREVENTION_WINDOW) {
-            const logger = createLogger(context);
-            logger.warn('Duplicate notification detected, skipping to prevent loop', {
-                notificationKey,
-                timeSinceLastSeen: now - lastSeen
-            });
-            return;
-        }
-        
-        // Record this notification
-        recentNotifications.set(notificationKey, now);
-        
-        // Clean up old entries
-        for (const [key, timestamp] of recentNotifications.entries()) {
-            if (now - timestamp > LOOP_PREVENTION_WINDOW * 2) {
-                recentNotifications.delete(key);
-            }
-        }
-        
-```
-
-The next statement, `const logger = createLogger(context);`, becomes the first line of the `try` block.
-
-- [ ] **Step 3: Add queue extension config**
+- [ ] **Step 1: Add queue extension config**
 
 In `host.json`, add an `extensions` block as a sibling of `logging` and `extensionBundle`:
 
@@ -687,30 +648,26 @@ In `host.json`, add an `extensions` block as a sibling of `logging` and `extensi
 
 `batchSize: 1` with `newBatchThreshold: 0` serializes processing. This is required because the deduplicator is check-then-act — `wasRecentlyProcessed` runs, then `recordProcessed` only after submission — so concurrent workers can both pass the check for the same item and double-submit. Throughput is not a concern: ~400 documents/day at 365 ms is roughly 2.5 minutes of work per day.
 
-- [ ] **Step 4: Verify host.json is valid JSON**
+- [ ] **Step 2: Verify host.json is valid JSON**
 
 Run: `node -e "console.log(JSON.stringify(require('./host.json').extensions.queues))"`
 Expected: `{"batchSize":1,"newBatchThreshold":0,"maxDequeueCount":5,"visibilityTimeout":"00:00:30"}`
 
-- [ ] **Step 5: Run the full suite**
+- [ ] **Step 3: Run the full suite**
 
 Run: `npx jest 2>&1 | tail -5`
 Expected: `Tests: 152 passed, 152 total`
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/functions/webhook-handler.js host.json
-git commit -m "fix: remove in-memory loop map, serialize queue processing
+git add host.json
+git commit -m "feat: serialize storage queue processing
 
-The 10-second per-subscription map dropped notifications during bursts, which
-is exactly when SharePoint fires most often. The Table Storage deduplicator
-supersedes it: per-item rather than per-subscription, and it survives across
-instances. Queue processing is serialized because the deduplicator is
-check-then-act and would double-submit under concurrency."
+The deduplicator is check-then-act, so concurrent workers can both pass the
+check for the same item and double-submit. batchSize 1 serializes processing;
+throughput is not a concern at ~400 documents/day."
 ```
-
----
 
 ### Task 5: Capture rollback state and deploy with the flag off
 
@@ -884,7 +841,114 @@ Then follow `docs/superpowers/plans/rollback-state-2026-08-18.md`.
 
 ---
 
-### Task 7: Widen the lookback window
+### Task 7: Remove the in-memory loop map
+
+Only after Task 6 is verified stable. Deferred to here so that flag-off behavior stayed
+byte-for-byte today's behavior throughout the deploy-and-enable window.
+
+The module-level `recentNotifications` map drops any notification arriving within 10 seconds of
+the previous one **for the same subscription+resource** — precisely the condition during an
+upload burst. It silently discards processing passes and is superseded by the Table Storage
+deduplicator, which works per-item and survives across instances.
+
+**Files:**
+- Modify: `src/functions/webhook-handler.js` — the map declaration and the loop-detection block inside `processNotification`
+- Modify: `src/shared/config.js` — remove the now-unused `loopPreventionWindow` entry
+
+**Interfaces:**
+- Consumes: verified async path from Task 6
+- Produces: no signature changes
+
+- [ ] **Step 1: Delete the map declaration**
+
+In `src/functions/webhook-handler.js`, delete these three lines:
+
+```js
+// Track recent notifications to prevent loops
+const recentNotifications = new Map();
+const LOOP_PREVENTION_WINDOW = config.webhook.loopPreventionWindow;
+```
+
+- [ ] **Step 2: Delete the loop-detection block**
+
+Inside `processNotification`, delete this entire block:
+
+```js
+        // Create notification key for loop detection
+        const notificationKey = `${notification.subscriptionId}-${notification.resource}`;
+        const now = Date.now();
+        
+        // Check if we've seen this notification recently
+        const lastSeen = recentNotifications.get(notificationKey);
+        if (lastSeen && (now - lastSeen) < LOOP_PREVENTION_WINDOW) {
+            const logger = createLogger(context);
+            logger.warn('Duplicate notification detected, skipping to prevent loop', {
+                notificationKey,
+                timeSinceLastSeen: now - lastSeen
+            });
+            return;
+        }
+        
+        // Record this notification
+        recentNotifications.set(notificationKey, now);
+        
+        // Clean up old entries
+        for (const [key, timestamp] of recentNotifications.entries()) {
+            if (now - timestamp > LOOP_PREVENTION_WINDOW * 2) {
+                recentNotifications.delete(key);
+            }
+        }
+        
+```
+
+The next statement, `const logger = createLogger(context);`, becomes the first line of the `try` block.
+
+- [ ] **Step 3: Remove the orphaned config entry**
+
+`loopPreventionWindow` now has no consumers. In `src/shared/config.js`, delete this line from the `webhook` block:
+
+```js
+        loopPreventionWindow: 10000 // 10 seconds
+```
+
+Remove the trailing comma from the preceding line (`notificationTimeout: 10000, // 10 seconds`) so the object literal stays valid.
+
+- [ ] **Step 4: Verify no dangling references**
+
+Run: `grep -rn "loopPreventionWindow\|LOOP_PREVENTION_WINDOW\|recentNotifications" src/`
+Expected: no output
+
+- [ ] **Step 5: Verify config still parses**
+
+Run: `node -e "console.log(JSON.stringify(require('./src/shared/config').webhook))"`
+Expected: valid JSON without a `loopPreventionWindow` key
+
+- [ ] **Step 6: Run the full suite**
+
+Run: `npx jest 2>&1 | tail -5`
+Expected: `Tests: 152 passed, 152 total`
+
+- [ ] **Step 7: Commit and deploy**
+
+```bash
+git add src/functions/webhook-handler.js src/shared/config.js
+git commit -m "fix: remove in-memory loop-prevention map
+
+The 10-second per-subscription map dropped notifications during bursts, which
+is exactly when SharePoint fires most often. The Table Storage deduplicator
+supersedes it: per-item rather than per-subscription, and it survives across
+instances. Deferred until after the async path was verified so that flag-off
+rollback stayed byte-for-byte through the rollout."
+npm run deploy
+```
+
+- [ ] **Step 8: Verify processing still succeeds**
+
+Upload a document to the Accounting_Research library and confirm it produces a queue item in `FIN_SCAN_Rename_And_Storage`.
+
+---
+
+### Task 8: Widen the lookback window
 
 Only after Task 6 is verified stable. This is what actually recovers the loss: with the handler no longer throttled, a wider window closes any gap that does occur.
 
@@ -936,13 +1000,13 @@ After the next burst, confirm the number of queue items created is not inflated 
 
 ---
 
-### Task 8: Raise the fetch ceiling
+### Task 9: Raise the fetch ceiling
 
 **Files:**
 - Modify: `src/shared/enhanced-forwarder.js:63`, `:96`
 
 **Interfaces:**
-- Consumes: Tasks 6 and 7 verified
+- Consumes: Tasks 6, 7 and 8 verified
 - Produces: no signature changes
 
 Verified against the live library: Graph honors `$orderby=lastModifiedDateTime desc` on SharePoint listItems despite the published reference listing only `$filter` and `$expand`, and `$top=200` is honored with `@odata.nextLink` present. Maximum observed occupancy of a 300-second window was 100 items, so a single 200-item page covers observed traffic.
