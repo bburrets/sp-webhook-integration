@@ -149,6 +149,7 @@ export const WEBHOOK_STATUS = {
  */
 export const HTTP_STATUS = {
     OK: 200,
+    ACCEPTED: 202,
     BAD_REQUEST: 400,
     UNAUTHORIZED: 401,
     FORBIDDEN: 403,

@@ -1,4 +1,4 @@
-const { app } = require('@azure/functions');
+const { app, output } = require('@azure/functions');
 const axios = require('axios');
 const EnhancedForwarder = require('../shared/enhanced-forwarder');
 const config = require('../shared/config');
@@ -15,11 +15,29 @@ const {
     SUCCESS_MESSAGES
 } = require('../shared/constants');
 
+// Queue used to move notification processing off the HTTP request path.
+// Graph requires a 2xx within 3 seconds; processing inline exceeds that during bursts.
+const notificationQueueOutput = output.storageQueue({
+    queueName: 'webhook-notifications',
+    connection: 'AzureWebJobsStorage'
+});
+
+/**
+ * Build one queue message per notification.
+ * @param {Array<Object>} notifications
+ * @param {string} receivedAt - ISO timestamp the handler received the batch
+ * @returns {Array<string>} JSON-serialized messages
+ */
+function buildQueueMessages(notifications, receivedAt) {
+    return notifications.map(notification => JSON.stringify({ ...notification, receivedAt }));
+}
+
 
 // Webhook endpoint to handle Microsoft Graph notifications
 app.http('webhook-handler', {
     methods: ['GET', 'POST'],
     authLevel: 'anonymous',
+    extraOutputs: [notificationQueueOutput],
     handler: wrapHandler(async (request, context) => {
         const logger = createLogger(context);
         const startTime = Date.now();
@@ -71,10 +89,30 @@ app.http('webhook-handler', {
             // Validate the notification payload
             const validatedData = validateWebhookNotification(notifications);
 
-            // Enrich notifications with stored clientState from SharePoint tracking list
+            // Async path: enqueue and return immediately so Graph always sees a fast 2xx.
+            // Enrichment and processing happen in notification-worker.
+            if (process.env.ASYNC_PROCESSING === 'true') {
+                const receivedAt = new Date().toISOString();
+                context.extraOutputs.set(
+                    notificationQueueOutput,
+                    buildQueueMessages(validatedData.value, receivedAt)
+                );
+
+                const duration = Date.now() - startTime;
+                logger.info('Enqueued notifications for async processing', {
+                    count: validatedData.value.length,
+                    durationMs: duration
+                });
+
+                return {
+                    status: HTTP_STATUS.ACCEPTED,
+                    body: 'Accepted'
+                };
+            }
+
+            // Inline path (ASYNC_PROCESSING off) — unchanged legacy behavior, retained for rollback.
             const enrichedNotifications = await enrichNotificationsWithClientState(validatedData.value, context);
 
-            // Process each enriched notification
             logger.info('Processing webhook notifications', {
                 count: enrichedNotifications.length
             });
@@ -82,12 +120,12 @@ app.http('webhook-handler', {
             for (const notification of enrichedNotifications) {
                 await processNotification(notification, context);
             }
-            
+
             const duration = Date.now() - startTime;
             logger.logResponse(200, duration, {
                 notificationCount: validatedData.value.length
             });
-            
+
             return {
                 status: HTTP_STATUS.OK,
                 body: SUCCESS_MESSAGES.NOTIFICATION_PROCESSED
@@ -645,6 +683,12 @@ async function routeToUiPathDispatcher(notification, context) {
         };
     }
 }
+
+module.exports = {
+    buildQueueMessages,
+    processNotification,
+    enrichNotificationsWithClientState
+};
 
 
 
