@@ -60,7 +60,7 @@ class EnhancedForwarder {
             }
             
             // Otherwise get recent items
-            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$orderby=lastModifiedDateTime desc&$top=20`;
+            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$orderby=lastModifiedDateTime desc&$top=200`;
             const response = await axios.get(listUrl, {
                 headers: {
                     'Authorization': `Bearer ${this.accessToken}`,
@@ -93,7 +93,7 @@ class EnhancedForwarder {
     // Get ALL recently modified items (for handling multiple simultaneous uploads)
     async getRecentItems(resource, withinSeconds = 120) {
         try {
-            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$orderby=lastModifiedDateTime desc&$top=20`;
+            const listUrl = `https://graph.microsoft.com/v1.0/${resource}/items?$expand=fields&$orderby=lastModifiedDateTime desc&$top=200`;
 
             this.context?.log(`getRecentItems: Fetching from ${listUrl}`);
 
