@@ -295,6 +295,56 @@ describe('webhook-handler', () => {
             expect(result.uipath.error).toBeNull();
         });
 
+        it('warns when a notification has no usable clientState instead of silently dropping it', async () => {
+            const context = makeContext();
+
+            const result = await processNotification({
+                subscriptionId: 'sub-blank-clientstate',
+                resource: 'sites/example.sharepoint.com:/sites/DWI:/lists/abc',
+                changeType: 'updated',
+                clientState: ''
+            }, context);
+
+            // No dispatch was attempted, and previously nothing warned -- the 'processed'
+            // log line alone made a total outage look like healthy traffic.
+            expect(result.uipath.attempted).toBe(false);
+
+            const warned = context.warn.mock.calls.map(c => String(c[0]));
+            const hit = warned.find(line => line.includes('no usable clientState'));
+            expect(hit).toBeDefined();
+            expect(hit).toContain('sub-blank-clientstate');
+            expect(hit).toContain('sites/example.sharepoint.com:/sites/DWI:/lists/abc');
+        });
+
+        it('warns when clientState is entirely absent', async () => {
+            const context = makeContext();
+
+            await processNotification({
+                subscriptionId: 'sub-missing-clientstate',
+                resource: 'sites/example.sharepoint.com:/sites/DWI:/lists/abc',
+                changeType: 'updated'
+            }, context);
+
+            expect(
+                context.warn.mock.calls.some(c => String(c[0]).includes('no usable clientState'))
+            ).toBe(true);
+        });
+
+        it('does not warn about clientState when one is present but simply not UiPath-routed', async () => {
+            const context = makeContext();
+
+            await processNotification({
+                subscriptionId: 'sub-non-uipath',
+                resource: 'sites/example.sharepoint.com:/sites/DWI:/lists/abc',
+                changeType: 'updated',
+                clientState: 'tracking:enabled'
+            }, context);
+
+            expect(
+                context.warn.mock.calls.some(c => String(c[0]).includes('no usable clientState'))
+            ).toBe(false);
+        });
+
         it('reports success: true on a normal successful dispatch', async () => {
             const result = await processNotification({
                 subscriptionId: 'sub-ok',

@@ -170,6 +170,18 @@ async function processNotification(notification, context) {
             listId: resourceData?.listId
         });
 
+        // A notification with no usable clientState is dispatched nowhere: shouldRouteToUiPath
+        // is false, no forwarding runs, and logWebhook('processed', ...) below still fires --
+        // so a single bad edit to the SharePoint tracking list can silently drop 100% of
+        // documents while the dashboards stay clean. Warn loudly. Do NOT throw: many
+        // subscriptions legitimately carry no clientState, and throwing would poison them.
+        if (!clientState || !String(clientState).trim()) {
+            logger.warn('Notification has no usable clientState - nothing will be dispatched', {
+                subscriptionId,
+                resource
+            });
+        }
+
         const uipathOutcome = { attempted: false, success: false, error: null };
 
         // Check if this notification should be routed to UiPath dispatcher
