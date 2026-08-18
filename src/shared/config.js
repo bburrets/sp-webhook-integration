@@ -64,8 +64,7 @@ module.exports = {
         maxExpirationDays: 3,
         defaultClientState: 'SharePointWebhook',
         validationTimeout: 5000, // 5 seconds
-        notificationTimeout: 10000, // 10 seconds
-        loopPreventionWindow: 10000 // 10 seconds
+        notificationTimeout: 10000 // 10 seconds
     },
 
     // Azure Table Storage Configuration

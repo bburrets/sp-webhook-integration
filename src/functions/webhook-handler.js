@@ -136,37 +136,8 @@ app.http('webhook-handler', {
     })
 });
 
-// Track recent notifications to prevent loops
-const recentNotifications = new Map();
-const LOOP_PREVENTION_WINDOW = config.webhook.loopPreventionWindow;
-
 async function processNotification(notification, context) {
     try {
-        // Create notification key for loop detection
-        const notificationKey = `${notification.subscriptionId}-${notification.resource}`;
-        const now = Date.now();
-        
-        // Check if we've seen this notification recently
-        const lastSeen = recentNotifications.get(notificationKey);
-        if (lastSeen && (now - lastSeen) < LOOP_PREVENTION_WINDOW) {
-            const logger = createLogger(context);
-            logger.warn('Duplicate notification detected, skipping to prevent loop', {
-                notificationKey,
-                timeSinceLastSeen: now - lastSeen
-            });
-            return;
-        }
-        
-        // Record this notification
-        recentNotifications.set(notificationKey, now);
-        
-        // Clean up old entries
-        for (const [key, timestamp] of recentNotifications.entries()) {
-            if (now - timestamp > LOOP_PREVENTION_WINDOW * 2) {
-                recentNotifications.delete(key);
-            }
-        }
-        
         const logger = createLogger(context);
         logger.logWebhook('processing', notification.subscriptionId, {
             resource: notification.resource,
