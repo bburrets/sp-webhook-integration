@@ -76,10 +76,10 @@ jest.mock('../../shared/uipath-processor-registry', () => ({
             return {
                 name: 'costco-inline-routing',
                 factory: (context) => ({
-                    process: jest.fn(async () => ({
+                    process: async () => ({
                         processed: true,
                         queueSubmission: { success: true, queueItemId: 'queue-123' }
-                    }))
+                    })
                 })
             };
         }
@@ -87,10 +87,10 @@ jest.mock('../../shared/uipath-processor-registry', () => ({
             return {
                 name: 'generic-document',
                 factory: (context) => ({
-                    process: jest.fn(async () => ({
+                    process: async () => ({
                         processed: true,
                         queueSubmission: { success: true, queueItemId: 'queue-456' }
-                    }))
+                    })
                 })
             };
         }
@@ -100,6 +100,24 @@ jest.mock('../../shared/uipath-processor-registry', () => ({
         if (!clientState) return [];
         return clientState.toLowerCase().split(';').map(s => s.trim()).filter(Boolean);
     })
+}));
+
+jest.mock('../../shared/processing-deduplicator', () => ({
+    createDeduplicator: jest.fn(() => ({
+        filterDuplicates: jest.fn(async (resource, items) => ({
+            toProcess: items,
+            skipped: []
+        })),
+        recordProcessed: jest.fn(async () => undefined)
+    }))
+}));
+
+jest.mock('../../shared/uipath-environment-config', () => ({
+    getEnvironmentConfig: jest.fn(() => ({
+        tenantName: 'FAMBrands_RPAOPS',
+        organizationUnitId: '277500',
+        environment: 'DEV'
+    }))
 }));
 
 const mockLogger = {
@@ -323,7 +341,7 @@ describe('uipath-dispatcher-dynamic', () => {
             const notification = {
                 subscriptionId: '07c6db43-15c9-4074-a40c-c5576c2f2011',
                 resource: 'sites/fambrandsllc.sharepoint.com:/sites/DWI:/lists/9e35f709-48be-4995-8b28-79730ad12b89',
-                clientState: 'processor:uipath;uipath:Trafficking Request Email Trigger_Queue;env:DEV;folder:277500;config:AzureFunctionApp',
+                clientState: 'processor:uipath;processor:costco;uipath:Trafficking Request Email Trigger_Queue;env:DEV;folder:277500;config:AzureFunctionApp',
                 changeType: 'updated',
                 resourceData: {
                     '@odata.type': '#Microsoft.Graph.ListItem',
