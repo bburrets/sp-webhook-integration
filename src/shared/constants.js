@@ -1,6 +1,15 @@
 /**
  * Shared Constants Module
  * Central location for all constants used across the SharePoint Webhooks application
+ *
+ * !! RUNTIME REQUIREMENT: Node >= 20.19 !!
+ * This file is a genuine ES module (`export const`, no `module.exports`) but every consumer
+ * loads it with `require()` — webhook-handler, both dispatchers, both queue clients, and both
+ * templates. That only works because `require(esm)` is supported from Node 20.19 / 22.12. On
+ * Node 18, or Node 20.0-20.18, requiring this module throws ERR_REQUIRE_ESM and the entire
+ * Function App fails to start — there is no webhook endpoint at all. package.json's
+ * `engines.node` is pinned to >=20.19.0 to match. Converting this file to CommonJS is a
+ * separate follow-up; until then, do not lower that floor.
  * 
  * This module exports constants for:
  * - SharePoint field encodings
