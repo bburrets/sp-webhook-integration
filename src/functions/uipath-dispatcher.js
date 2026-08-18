@@ -308,9 +308,11 @@ async function fetchSharePointItem(resource, resourceData, context) {
 
                     // Use EnhancedForwarder to get ALL recently modified items
                     // This handles the case where multiple files are uploaded simultaneously
-                    // Using 5-minute window (300 seconds) since deduplication prevents re-processing
                     const forwarder = new EnhancedForwarder(context, accessToken);
-                    const recentItems = await forwarder.getRecentItems(resource, 300);
+                    // 30-minute lookback. Graph notification delivery can lag well past five
+                    // minutes; the 2026-07-28 loss was a 10.4-minute gap. The Table Storage
+                    // deduplicator (30-minute window) absorbs the resulting overlap.
+                    const recentItems = await forwarder.getRecentItems(resource, 1800);
 
                     if (recentItems && recentItems.length > 0) {
                         logger.info('Found multiple recently modified items', {
