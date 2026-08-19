@@ -2,113 +2,123 @@
 
 ## Project: SharePoint to UiPath Webhook Integration
 
-### Current Status: ✅ WORKING (Development Environment)
-**Last Verified**: August 20, 2025
+Azure Functions middleware. SharePoint fires a content-free webhook → this app works out what
+changed via Graph → submits items to UiPath Orchestrator queues.
+
+**Last verified against production: 2026-08-18** (every fact below was checked, not assumed).
 
 ---
 
-## Quick Commands
+## Active Webhooks — BOTH PRODUCTION
 
-### Check Webhook Status
+| Subscription | Site | Queue | Folder |
+|---|---|---|---|
+| `cf16bc07-2238-4f6b-b76c-4bb21f929987` | Accounting_Research (doc library) | `FIN_SCAN_Rename_And_Storage` | 606837 |
+| `023a2ed7-c5c3-4b85-bf76-24a1baf30474` | COSTCO US INLINE Routing Tracker | `Trafficking_Request_Email_Trigger_Queue` | 376892 |
+
+Tenant for both: `FAMBrands_RPAOPS_PROD`. There is no active DEV webhook.
+
+Webhooks expire after 3 days; `webhook-sync-timer` renews hourly (`0 0 * * * *`) when <24h remain.
+README says 30 minutes — that is wrong.
+
+**Never trust webhook IDs or expiry dates written in docs.** They rotate. Read the tracking list
+(`sphookmanagement`, list `82a105da-8206-4bd0-851b-d3f2260043f4`) for ground truth.
+
+---
+
+## clientState — the routing DSL
+
+Live format is **pipe-delimited**:
+
+```
+destination:uipath|handler:document|queue:FIN_SCAN_Rename_And_Storage|tenant:PROD|folder:606837
+```
+
+Legacy semicolon format still parses (`processor:uipath;processor:document;uipath:Q;env:PROD;folder:N`).
+Separator is auto-detected: `|` if present, else `;`.
+
+**A handler token is mandatory.** `handler:document` / `handler:costco` (or legacy
+`processor:document` / `processor:costco`). Without one, `resolveProcessor` returns NULL and the
+item is silently never dispatched — no error, no queue item. Registry checks costco first, then
+generic-document.
+
+Graph does NOT return clientState in notifications. It is stored in the SharePoint tracking list
+and re-attached per notification by `enrichNotificationsWithClientState`.
+
+---
+
+## Architecture (async since 2026-08-18)
+
+```
+Graph ──POST──> webhook-handler ──enqueue──> [webhook-notifications] ──> notification-worker
+                  202 in ~0.4s                                            enrich→fetch→dedup→UiPath
+```
+
+- `ASYNC_PROCESSING=true` app setting enables this. `false` reverts to inline processing.
+- Graph requires a 2xx within **3 seconds**; >15% over 10s and it DROPS notifications for 10 min.
+  Never put network I/O back on the handler's request path.
+- Failures rethrow in the worker → retry (8 × 3min) → `webhook-notifications-poison`.
+- Lookback for "which item changed" is 1500s, deliberately under the 30-min dedup window.
+
+---
+
+## Gotchas that will cost you hours
+
+- **`src/shared/constants.js` is an ES module** (`export const`, no `module.exports`) in an
+  otherwise CommonJS codebase. Jest CANNOT require it — `SyntaxError: Unexpected token 'export'`.
+  Every test suite must `jest.mock('../shared/constants')`. It loads at runtime only via
+  `require(esm)`, so **Node >= 20.19 is required** or the app will not start at all.
+- **Never set `transform: {}` in `jest.config.js`.** It disables babel-jest, which silently stops
+  `jest.mock()` hoisting — mocks declared after a `require()` then never apply and the real module
+  loads instead. Symptom: tests failing for reasons that make no sense.
+- **No deployment slots** (Consumption plan). Rollback = repoint `WEBSITE_RUN_FROM_PACKAGE` to a
+  prior blob in `function-releases` + restart. Drain the queue first or in-flight messages strand.
+- **App Insights retains only ~25 minutes of traces.** Post-hoc incident diagnosis is not possible.
+- `local.settings.json` lacks `AZURE_CLIENT_ID/SECRET/TENANT_ID`. Pull creds from the Function App:
+  `az functionapp config appsettings list --name webhook-functions-sharepoint-002 --resource-group rg-sharepoint-webhooks -o json`
+- `uipath-queue-client.js` `getQueueItems()` filters on `QueueDefinitionName`, which Orchestrator
+  rejects with HTTP 400. The valid property is `QueueDefinitionId`. (Known broken, diagnostics only.)
+
+### API quirks (verified empirically)
+
+- Graph **does** honor `$orderby=lastModifiedDateTime desc` on SharePoint listItems, despite the
+  published reference listing only `$filter` and `$expand`. Much depends on this.
+- Graph `$filter` on `lastModifiedDateTime` returns **400**. Time filtering must stay client-side.
+- UiPath OData: `$top` max is **100** for QueueItems; `CreationTime` is **not** allowed in `$orderby`.
+- UiPath queue retention is ~27 days — older items are purged, limiting reconciliation windows.
+
+---
+
+## Commands
+
 ```bash
-curl -X GET "https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<FUNCTION_KEY>" -H "Accept: application/json" -s | jq '.'
+# Deploy (func publish)
+npm run deploy
+
+# Tests — 179 passing, 10 suites
+npm test
+
+# Rollback layer 1 (seconds): revert async dispatch only, NOT the shared-path changes
+az functionapp config appsettings set --name webhook-functions-sharepoint-002 \
+  --resource-group rg-sharepoint-webhooks --settings ASYNC_PROCESSING=false
+
+# Queue depth / poison
+az storage message peek --queue-name webhook-notifications \
+  --account-name webhookstorageacct002 --auth-mode key --num-messages 10 -o table
 ```
 
-### Trigger Webhook Sync
-```bash
-curl -X POST "https://webhook-functions-sharepoint-002.azurewebsites.net/api/webhook-sync?code=<FUNCTION_KEY>" -H "Content-Type: application/json" -d '{}' -s | jq '.'
-```
-
-### View Azure Function Logs
-```bash
-az monitor app-insights query --app webhook-functions-sharepoint-002 --resource-group rg-sharepoint-webhooks --analytics-query "traces | where timestamp > ago(10m) | order by timestamp desc | limit 50" --output table
-```
+Full rollback procedure: `docs/superpowers/plans/rollback-state-2026-08-18.md`
 
 ---
 
-## Critical Information
+## Known open items
 
-### Current Environment: DEVELOPMENT
-- **Tenant**: FAMBrands_RPAOPS (NOT _PROD)
-- **Folder**: 277500
-- **Queue**: Trafficking Request Email Trigger_Queue
-- **SharePoint List**: COSTCO-INLINE-Trafficking-Routing
+- Deduplicator fails **open** on transient Table Storage errors → can duplicate a submission.
+- `$top=200` was justified against the old 300s window; occupancy over 1500s is unmeasured.
+- Forwarding (`forward:`) failures are still swallowed — retry is UiPath-only. No live webhook
+  uses `forward:` today.
+- No alerting on `webhook-notifications-poison`.
+- Converting `constants.js` to CommonJS would remove the Node floor and let Jest load it for real.
 
-### Working Webhook ID
-`07c6db43-15c9-4074-a40c-c5576c2f2011` (expires Aug 23, 2025)
-
-### ClientState Configuration
-```
-processor:uipath;uipath:Trafficking Request Email Trigger_Queue;env:DEV;folder:277500;config:AzureFunctionApp
-```
-**Note**: ClientState is now properly preserved in SharePoint tracking list
-
----
-
-## Common Issues & Solutions
-
-### "Folder does not exist" Error
-- **Cause**: Using wrong tenant (PROD instead of DEV)
-- **Fix**: Ensure UIPATH_TENANT_NAME=FAMBrands_RPAOPS (no _PROD suffix)
-
-### "Queue does not exist" Error  
-- **Cause**: Queue name mismatch or wrong folder
-- **Fix**: Verify queue name exactly matches "Trafficking Request Email Trigger_Queue"
-
-### Webhook Not Processing
-- **Check**: Item Status field must equal "Send Generated Form"
-- **Verify**: Webhook is active (use status command above)
-
----
-
-## Environment Configurations
-
-### Development (CURRENT)
-```
-UIPATH_ORCHESTRATOR_URL=https://cloud.uipath.com/fambrdpwrgnn/FAMBrands_RPAOPS/orchestrator_
-UIPATH_TENANT_NAME=FAMBrands_RPAOPS
-UIPATH_ORGANIZATION_UNIT_ID=277500
-```
-
-### Production
-```
-UIPATH_ORCHESTRATOR_URL=https://cloud.uipath.com/fambrdpwrgnn/FAMBrands_RPAOPS_PROD/orchestrator_
-UIPATH_TENANT_NAME=FAMBrands_RPAOPS_PROD  
-UIPATH_ORGANIZATION_UNIT_ID=376892
-```
-
----
-
-## Testing Workflow
-
-1. Update SharePoint item with Status="Send Generated Form"
-2. Check Application Insights logs (should process within seconds)
-3. Verify item appears in UiPath queue
-4. If issues, check tenant/folder configuration first
-
----
-
-## Important Notes
-
-- **Webhooks auto-renew**: Timer function runs hourly and renews webhooks expiring within 24 hours
-  - Renewal extends expiration by 3 days (max allowed for SharePoint)
-  - Failed renewals are logged and require manual intervention
-  - Manual renewal: Trigger `/api/webhook-sync` endpoint
-- Same client credentials work for both Dev and Prod
-- Always restart Function App after config changes
-- Function keys may rotate - check Azure Portal if auth fails
-
-### Webhook Lifecycle
-- **Created**: 3-day expiration
-- **Auto-renewal**: Triggered when < 24 hours remain
-- **After renewal**: New 3-day expiration from renewal time
-- **If renewal fails**: Webhook expires and stops receiving notifications
-
----
-
-## Contact for Issues
-- Azure Resource Group: rg-sharepoint-webhooks
-- Function App: webhook-functions-sharepoint-002
-- Application Insights: webhook-functions-sharepoint-002
-
-Last Working Commit: d34f6f9 (Aug 20, 2025)
+**Infra:** Function App `webhook-functions-sharepoint-002`, RG `rg-sharepoint-webhooks`,
+storage `webhookstorageacct002`, East US, Node 20 (Azure reports EOL).
