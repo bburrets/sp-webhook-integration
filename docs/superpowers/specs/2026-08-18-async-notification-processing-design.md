@@ -42,7 +42,7 @@ in a single 2026-07-28 incident where the gap between the last upload and the ne
 notification was **10.4 minutes** — matching the documented 10-minute throttle penalty. The
 300-second lookback could not reach back across that gap. Correlation is exact (6/6 missing
 before the cutoff, 5/5 delivered after), but no logs survive to confirm the mechanism;
-App Insights retains only ~25 minutes of traces.
+App Insights is workspace-based with 30-day retention; the app emits telemetry only while invoked (Consumption scales to zero), so an idle period leaves no trace to inspect.
 
 ### Why raising `$top` alone is not the fix
 
@@ -284,6 +284,7 @@ duration stays under a second and that library count equals queue count for the 
   which Orchestrator rejects with HTTP 400. The valid property is `QueueDefinitionId`.
   Diagnostics-only, so it has been failing unnoticed.
 - 13 queue items sit in `Failed` status (robot-side, not delivery).
-- App Insights retains only ~25 minutes of traces, so post-hoc incident diagnosis is not
+- App Insights is workspace-based with 30-day retention, but the app emits telemetry only while
+  invoked, so post-hoc diagnosis of a quiet period is not
   currently possible.
 - UiPath queue retention is ~27 days, so delivery loss before 2026-07-16 cannot be assessed.
