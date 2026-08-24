@@ -73,7 +73,10 @@ Graph ──POST──> webhook-handler ──enqueue──> [webhook-notificati
   loads instead. Symptom: tests failing for reasons that make no sense.
 - **No deployment slots** (Consumption plan). Rollback = repoint `WEBSITE_RUN_FROM_PACKAGE` to a
   prior blob in `function-releases` + restart. Drain the queue first or in-flight messages strand.
-- **App Insights retains only ~25 minutes of traces.** Post-hoc incident diagnosis is not possible.
+- **App Insights is workspace-based; retention is 30 days** (the workspace governs, not the
+  component's `retentionInDays: 90`). An idle app looks like "no data": Consumption scales to
+  zero and emits telemetry only while invoked, so a quiet library means empty queries — that is
+  not evidence of a logging failure.
 - `local.settings.json` lacks `AZURE_CLIENT_ID/SECRET/TENANT_ID`. Pull creds from the Function App:
   `az functionapp config appsettings list --name webhook-functions-sharepoint-002 --resource-group rg-sharepoint-webhooks -o json`
 - `uipath-queue-client.js` `getQueueItems()` filters on `QueueDefinitionName`, which Orchestrator
@@ -117,8 +120,35 @@ Full rollback procedure: `docs/superpowers/plans/rollback-state-2026-08-18.md`
 - `$top=200` was justified against the old 300s window; occupancy over 1500s is unmeasured.
 - Forwarding (`forward:`) failures are still swallowed — retry is UiPath-only. No live webhook
   uses `forward:` today.
-- No alerting on `webhook-notifications-poison`.
 - Converting `constants.js` to CommonJS would remove the Node floor and let Jest load it for real.
+
+---
+
+## Credentials — this took the system down for 5 days
+
+The Azure AD client secret on app registration `b3fee77f-b8d4-4d4c-a6b2-0ebcb7e9410f` expired
+**2026-08-19**. Graph auth died → the hourly renewal timer failed → both subscriptions expired
+2026-08-21 → every notification stopped. Nothing alerted. Current secret expires **2027-08-24**.
+
+The timer **catches and logs** its errors (`webhook-sync.js:88`), so the Function App still
+reports success while completely broken. Never rely on function-failure signals here.
+
+Recovery is scripted: `node src/utilities/recover-webhooks.js` (dry run) then `--execute`. It reads
+each webhook's resource and clientState from the tracking list, recreates the expired
+subscriptions, and writes the new IDs back with clientState preserved. It refuses to recreate a
+subscription whose clientState is empty. Expired subscriptions **cannot be renewed** — they must
+be recreated, and they come back with new IDs.
+
+## Alerting (resource group `rg-sharepoint-webhooks`, action group `sp-webhook-alerts`)
+
+| Rule | Fires when |
+|---|---|
+| `sp-webhook-auth-or-renewal-failure` (Sev1) | Graph auth or renewal error in 15 min |
+| `sp-webhook-renewal-heartbeat-missing` (Sev2) | timer silent for 3 h |
+| `sp-webhook-worker-failing` (Sev2) | ≥3 worker failures in 30 min |
+
+Use `contains`, not `has`, when matching `AADSTS` — `has` is term-based and will **not** match
+`AADSTS7000222`. That mistake silently disarms the alert.
 
 **Infra:** Function App `webhook-functions-sharepoint-002`, RG `rg-sharepoint-webhooks`,
 storage `webhookstorageacct002`, East US, Node 20 (Azure reports EOL).
