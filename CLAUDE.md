@@ -62,6 +62,35 @@ Graph ──POST──> webhook-handler ──enqueue──> [webhook-notificati
 
 ---
 
+## Document classify & auto-rename (new, NOT live)
+
+Folder-scoped hourly sweep that renames PDFs to a per-document-type convention. Separate from the
+webhook path entirely — new timer + queue + worker, no shared files on the notification path touched.
+
+```
+document-rename-timer (0 30 * * * *) --enqueue--> [document-rename] --> document-rename-worker
+  list folder, filter candidates                                       download -> pdf-parse ->
+  no file I/O, no writes                                               classify -> rename via Graph
+```
+
+- Rules live in `src/config/document-types/{check,costing,glje,wire}.json`, validated at load time.
+- **All four rule sets are `"placeholder": true`.** While any is, the worker refuses to rename no
+  matter what `RENAME_DRY_RUN` says — the patterns are guesses at the real convention. Real naming
+  rules were never in this repo; they live in the UiPath robot.
+- `RENAME_ENABLED` defaults **false**, `RENAME_DRY_RUN` defaults **true**. A missing setting cannot
+  cause a live rename.
+- Scanned PDFs have no text layer, so they are recorded `NoTextLayer` and never renamed. No OCR.
+- State lives in SharePoint columns on the library (`RenameStatus`, `RenameAttempts`,
+  `RenameContentHash`, ...), not Table Storage — the folder listing already expands
+  `listItem($expand=fields)`, so it is free. Columns must be created before enabling.
+- Renaming re-triggers the library's live webhook. **Confirm the folder is not in the same library as
+  the Accounting_Research webhook, or retire that webhook, before going live.**
+- Graph write permission (`Sites.ReadWrite.All`) is **unverified** — see the checklist in the doc.
+
+Full reference: `docs/document-rename-conventions.md`
+
+---
+
 ## Gotchas that will cost you hours
 
 - **`src/shared/constants.js` is an ES module** (`export const`, no `module.exports`) in an
@@ -81,6 +110,9 @@ Graph ──POST──> webhook-handler ──enqueue──> [webhook-notificati
   `az functionapp config appsettings list --name webhook-functions-sharepoint-002 --resource-group rg-sharepoint-webhooks -o json`
 - `uipath-queue-client.js` `getQueueItems()` filters on `QueueDefinitionName`, which Orchestrator
   rejects with HTTP 400. The valid property is `QueueDefinitionId`. (Known broken, diagnostics only.)
+- Graph calls have **no 429/Retry-After handling** anywhere except `src/shared/graph-request.js`
+  (added for the rename sweep, which is a much heavier Graph consumer). `axios-retry` is wired for
+  UiPath only. `RETRY_CONFIG` in constants.js is declared but never read on the Graph path.
 
 ### API quirks (verified empirically)
 
@@ -98,7 +130,7 @@ Graph ──POST──> webhook-handler ──enqueue──> [webhook-notificati
 # Deploy (func publish)
 npm run deploy
 
-# Tests — 179 passing, 10 suites
+# Tests — 466 passing, 23 suites
 npm test
 
 # Rollback layer 1 (seconds): revert async dispatch only, NOT the shared-path changes
@@ -118,6 +150,8 @@ Full rollback procedure: `docs/superpowers/plans/rollback-state-2026-08-18.md`
 
 - Deduplicator fails **open** on transient Table Storage errors → can duplicate a submission.
 - `$top=200` was justified against the old 300s window; occupancy over 1500s is unmeasured.
+  `getRecentItems` also ignores `@odata.nextLink`, so 200 is a silent truncation ceiling. (The new
+  `sharepoint-folder-scanner.js` paginates properly; `enhanced-forwarder.js` still does not.)
 - Forwarding (`forward:`) failures are still swallowed — retry is UiPath-only. No live webhook
   uses `forward:` today.
 - Converting `constants.js` to CommonJS would remove the Node floor and let Jest load it for real.

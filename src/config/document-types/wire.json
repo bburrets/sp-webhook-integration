@@ -1,0 +1,35 @@
+{
+    "type": "WIRE",
+    "placeholder": true,
+    "_note": "PLACEHOLDER RULES. The real WIRE convention has not been supplied yet. While placeholder is true the worker refuses to rename regardless of RENAME_DRY_RUN.",
+    "enabled": true,
+    "extensions": [".pdf"],
+    "classify": {
+        "filenameHints": ["wire", "wire transfer", "remittance"],
+        "contentPatterns": [
+            "\\bWire\\s+(?:Transfer|Payment|Advice)\\b",
+            "\\bBeneficiary\\s+(?:Name|Bank)\\b"
+        ],
+        "minMatches": 1
+    },
+    "fields": {
+        "beneficiary": {
+            "pattern": "Beneficiary(?:\\s+Name)?[:\\s]+(.+?)(?:\\r?\\n|$)",
+            "required": true,
+            "transform": ["trim", "upper", "alnum"],
+            "maxLength": 30
+        },
+        "amount": {
+            "pattern": "(?:Amount|Total)[:\\s]+(?:USD\\s*)?\\$?\\s*([\\d,]+(?:\\.\\d{2})?)",
+            "required": true,
+            "transform": ["digits"]
+        },
+        "valueDate": {
+            "pattern": "(?:Value\\s+Date|Date)[:\\s]+(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4})",
+            "required": true,
+            "transform": ["date:YYYYMMDD"]
+        }
+    },
+    "template": "WIRE_{beneficiary}_{amount}_{valueDate}",
+    "validate": "^WIRE_[A-Z0-9]{1,30}_\\d+_\\d{8}\\.pdf$"
+}

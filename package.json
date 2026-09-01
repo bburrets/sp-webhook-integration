@@ -33,7 +33,8 @@
     "@azure/data-tables": "^13.2.2",
     "@azure/functions": "^4.7.2-preview",
     "axios": "^1.11.0",
-    "axios-retry": "^4.5.0"
+    "axios-retry": "^4.5.0",
+    "pdf-parse": "^1.1.4"
   },
   "engines": {
     "node": ">=20.19.0"

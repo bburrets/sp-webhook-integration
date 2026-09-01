@@ -1,0 +1,35 @@
+{
+    "type": "GLJE",
+    "placeholder": true,
+    "_note": "PLACEHOLDER RULES. The real GLJE convention has not been supplied yet. While placeholder is true the worker refuses to rename regardless of RENAME_DRY_RUN.",
+    "enabled": true,
+    "extensions": [".pdf"],
+    "classify": {
+        "filenameHints": ["glje", "gl je", "journal entry"],
+        "contentPatterns": [
+            "\\bGeneral\\s+(?:Ledger\\s+)?Journal\\s+Entry\\b",
+            "\\bJE\\s*(?:No|Number|#)"
+        ],
+        "minMatches": 1
+    },
+    "fields": {
+        "entity": {
+            "pattern": "(?:Entity|Company)\\s*(?:Code)?[:\\s]+([A-Za-z0-9]{2,10})",
+            "required": true,
+            "transform": ["trim", "upper", "alnum"],
+            "maxLength": 10
+        },
+        "period": {
+            "pattern": "Period[:\\s]+(\\d{4}[-/]?\\d{2}|\\d{2}[-/]\\d{4})",
+            "required": true,
+            "transform": ["digits"]
+        },
+        "jeNumber": {
+            "pattern": "JE\\s*(?:No|Number|#)?\\.?\\s*[:#]?\\s*(\\d{3,12})",
+            "required": true,
+            "transform": ["digits"]
+        }
+    },
+    "template": "GLJE_{entity}_{period}_{jeNumber}",
+    "validate": "^GLJE_[A-Z0-9]{1,10}_\\d{6}_\\d{3,12}\\.pdf$"
+}

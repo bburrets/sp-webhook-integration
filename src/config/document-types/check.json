@@ -1,0 +1,35 @@
+{
+    "type": "CHECK",
+    "placeholder": true,
+    "_note": "PLACEHOLDER RULES. The real CHECK convention has not been supplied yet. While placeholder is true the worker refuses to rename regardless of RENAME_DRY_RUN. Replace patterns/template/validate with the real convention and set placeholder to false.",
+    "enabled": true,
+    "extensions": [".pdf"],
+    "classify": {
+        "filenameHints": ["check", "chk"],
+        "contentPatterns": [
+            "\\bCheck\\s*(?:No|Number|#)",
+            "\\bPay\\s+to\\s+the\\s+order\\s+of\\b"
+        ],
+        "minMatches": 1
+    },
+    "fields": {
+        "vendor": {
+            "pattern": "Pay\\s+to\\s+the\\s+order\\s+of[:\\s]+(.+?)(?:\\r?\\n|$)",
+            "required": true,
+            "transform": ["trim", "upper", "alnum"],
+            "maxLength": 30
+        },
+        "checkNumber": {
+            "pattern": "Check\\s*(?:No|Number|#)\\.?\\s*[:#]?\\s*(\\d{3,12})",
+            "required": true,
+            "transform": ["digits"]
+        },
+        "checkDate": {
+            "pattern": "(?:Check\\s*)?Date[:\\s]+(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4})",
+            "required": true,
+            "transform": ["date:YYYYMMDD"]
+        }
+    },
+    "template": "CHECK_{vendor}_{checkNumber}_{checkDate}",
+    "validate": "^CHECK_[A-Z0-9]{1,30}_\\d{3,12}_\\d{8}\\.pdf$"
+}

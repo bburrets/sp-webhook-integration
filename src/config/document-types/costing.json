@@ -1,0 +1,53 @@
+{
+    "type": "COSTING",
+    "placeholder": true,
+    "_note": "PLACEHOLDER RULES. The real COSTING convention has not been supplied yet. While placeholder is true the worker refuses to rename regardless of RENAME_DRY_RUN.",
+    "enabled": true,
+    "extensions": [
+        ".pdf"
+    ],
+    "classify": {
+        "filenameHints": [
+            "costing",
+            "cost sheet",
+            "costsheet"
+        ],
+        "contentPatterns": [
+            "\\bCost(?:ing)?\\s+Sheet\\b",
+            "\\bTotal\\s+(?:Garment\\s+)?Cost\\b"
+        ],
+        "minMatches": 1
+    },
+    "fields": {
+        "style": {
+            "pattern": "Style\\s*(?:No|Number|#)?\\.?\\s*[:#]?\\s*([A-Za-z0-9-]{3,20})",
+            "required": true,
+            "transform": [
+                "trim",
+                "upper",
+                "alnum"
+            ],
+            "maxLength": 20
+        },
+        "season": {
+            "pattern": "Season[ \\t]*[:#]?[ \\t]*([A-Za-z0-9]+(?:[ \\t]+[A-Za-z0-9]+){0,3})",
+            "required": true,
+            "transform": [
+                "trim",
+                "upper",
+                "alnum"
+            ],
+            "maxLength": 20
+        },
+        "revision": {
+            "pattern": "Rev(?:ision)?\\.?\\s*[:#]?\\s*(\\d{1,3})",
+            "required": false,
+            "default": "0",
+            "transform": [
+                "digits"
+            ]
+        }
+    },
+    "template": "COSTING_{style}_{season}_R{revision}",
+    "validate": "^COSTING_[A-Z0-9]{1,20}_[A-Z0-9]{1,20}_R\\d{1,3}\\.pdf$"
+}
