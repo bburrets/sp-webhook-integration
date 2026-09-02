@@ -10,6 +10,7 @@ const {
     templatePlaceholders,
     hasPlaceholderRules,
     placeholderTypes,
+    hasGeneratedFields,
     resetRuleSetCache
 } = require('../document-type-rules');
 
@@ -124,6 +125,57 @@ describe('document-type-rules', () => {
             }
             expect(message).toMatch(/must be uppercase/);
             expect(message).toMatch(/validate is not a valid regex/);
+        });
+    });
+
+    describe('generated fields', () => {
+        function generatedRaw(fieldOverrides = {}) {
+            return validRaw({
+                fields: { seq: { generate: 'digits', length: 6, ...fieldOverrides } },
+                template: 'GLJE_{seq}',
+                validate: '^GLJE_\\d{6}\\.pdf$'
+            });
+        }
+
+        it('accepts a well-formed generated field', () => {
+            const ruleSet = validateRuleSet(generatedRaw(), 'test.json');
+            expect(ruleSet.fields.seq.generate).toBe('digits');
+            expect(ruleSet.fields.seq.length).toBe(6);
+            expect(ruleSet.fields.seq.regex).toBeNull();
+        });
+
+        it('rejects an unknown generator', () => {
+            expect(() => validateRuleSet(generatedRaw({ generate: 'dice' }), 'test.json'))
+                .toThrow(/not a known generator/);
+        });
+
+        it('rejects a missing or invalid length', () => {
+            expect(() => validateRuleSet(generatedRaw({ length: undefined }), 'test.json'))
+                .toThrow(/length must be a positive integer/);
+            expect(() => validateRuleSet(generatedRaw({ length: 0 }), 'test.json'))
+                .toThrow(/length must be a positive integer/);
+        });
+
+        it('rejects a field that is both extracted and generated', () => {
+            expect(() => validateRuleSet(generatedRaw({ pattern: '(\\d+)' }), 'test.json'))
+                .toThrow(/cannot declare both "pattern" and "generate"/);
+        });
+
+        it('rejects an optional generated field', () => {
+            // A minted value is always producible, so optional is meaningless.
+            expect(() => validateRuleSet(generatedRaw({ required: false }), 'test.json'))
+                .toThrow(/generated, so it cannot be optional/);
+        });
+
+        it('reports which rule sets mint values', () => {
+            expect(hasGeneratedFields(validateRuleSet(generatedRaw(), 'test.json'))).toBe(true);
+            expect(hasGeneratedFields(validateRuleSet(validRaw(), 'test.json'))).toBe(false);
+            expect(hasGeneratedFields(null)).toBe(false);
+        });
+
+        it('is true for the shipped GLJE rules and false for CHECK', () => {
+            expect(hasGeneratedFields(getRuleSet('GLJE'))).toBe(true);
+            expect(hasGeneratedFields(getRuleSet('CHECK'))).toBe(false);
         });
     });
 

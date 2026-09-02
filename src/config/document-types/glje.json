@@ -1,7 +1,7 @@
 {
     "type": "GLJE",
     "placeholder": true,
-    "_note": "Convention taken from OutputBox/GLJE/{YYYY_MM}/ (e.g. GLJE_11_03_2025_129334.pdf). The G/L Date line extracts cleanly from the OCR text. The trailing 6-digit id is UNCONFIRMED: it is consistently 6 digits across the output folder, but the document body shows 'JE-000001', so it comes from a batch or document id this pattern does not yet locate. Needs one confirmed example before going live.",
+    "_note": "Convention taken from OutputBox/GLJE/{YYYY_MM}/ (e.g. GLJE_11_03_2025_129334.pdf). The G/L Date line extracts cleanly from the OCR text. The trailing 6-digit id is RANDOMLY GENERATED at rename time -- it appears nowhere in the document. That means a dry run's proposed GLJE name will not equal the name a later live run produces; check the shape, not the exact value. A collision on this value is bad luck rather than a duplicate document, so the worker regenerates instead of raising an exception.",
     "enabled": true,
     "extensions": [
         ".pdf"
@@ -29,11 +29,10 @@
             ]
         },
         "jeNumber": {
-            "pattern": "JE[-\\s]*0*(\\d{1,8})",
+            "generate": "digits",
+            "length": 6,
             "required": true,
-            "transform": [
-                "trim"
-            ]
+            "_note": "Randomly generated at rename time, not read from the document. Confirmed with the business 2026-09-02."
         }
     },
     "template": "GLJE_{glDate}_{jeNumber}",

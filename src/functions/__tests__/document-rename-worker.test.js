@@ -52,7 +52,8 @@ const {
     handleQueueMessage,
     nextAttempts,
     resetFolderCache,
-    DETERMINISTIC_STATUSES
+    DETERMINISTIC_STATUSES,
+    MAX_REGENERATION_ATTEMPTS
 } = require('../document-rename-worker');
 
 // Mirrors a real OCR'd check remittance. CHECK is used for the happy path
@@ -308,6 +309,72 @@ describe('document-rename-worker', () => {
             resetFolderCache();
             await handleRenameMessage(job(), mockContext());
             expect(listFolderFiles).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    describe('regenerating a colliding generated value', () => {
+        // GLJE's trailing 6 digits are random, so a collision is bad luck rather
+        // than a duplicate document. CHECK has no generated field, so a collision
+        // there stays an exception.
+        const GLJE_TEXT = 'General Journal FAM, LLC (FAM)\nJE-000001\n'
+            + 'Run Date: 7/1/2026 G/L Date: 6/30/2026\n';
+
+        function useGlje() {
+            extractDocumentText.mockResolvedValue({
+                text: GLJE_TEXT, hasTextLayer: true, charCount: GLJE_TEXT.length,
+                pageCount: 1, byteLength: 2048, unsupported: false
+            });
+        }
+
+        it('retries with a fresh id when Graph reports a collision', async () => {
+            useGlje();
+            renameFile
+                .mockResolvedValueOnce({ renamed: false, collision: true, newName: 'x', error: 'taken' })
+                .mockResolvedValueOnce({ renamed: true, collision: false, newName: 'y', error: null });
+
+            const result = await handleRenameMessage(job(), mockContext());
+
+            expect(result.status).toBe(RENAME_STATUS.RENAMED);
+            expect(renameFile).toHaveBeenCalledTimes(2);
+            // A fresh id means a different name on the retry.
+            expect(renameFile.mock.calls[0][0].newName).not.toBe(renameFile.mock.calls[1][0].newName);
+        });
+
+        it('gives up after the regeneration limit', async () => {
+            useGlje();
+            renameFile.mockResolvedValue({
+                renamed: false, collision: true, newName: 'x', error: 'taken'
+            });
+
+            const result = await handleRenameMessage(job(), mockContext());
+
+            expect(result.status).toBe(RENAME_STATUS.NAME_COLLISION);
+            expect(renameFile).toHaveBeenCalledTimes(MAX_REGENERATION_ATTEMPTS + 1);
+        });
+
+        it('does not retry a collision on an extracted value', async () => {
+            // CHECK mints nothing, so a collision is real information.
+            renameFile.mockResolvedValue({
+                renamed: false, collision: true, newName: EXPECTED_NAME, error: 'taken'
+            });
+
+            const result = await handleRenameMessage(job(), mockContext());
+
+            expect(result.status).toBe(RENAME_STATUS.NAME_COLLISION);
+            expect(renameFile).toHaveBeenCalledTimes(1);
+        });
+
+        it('regenerates in dry run too, where there is no Graph 409 to catch it', async () => {
+            useGlje();
+            resolveDryRun.mockReturnValue({ dryRun: true, reason: 'RENAME_DRY_RUN is enabled' });
+            checkCollision
+                .mockReturnValueOnce({ collides: true, conflictingFile: { driveItemId: 'other' } })
+                .mockReturnValue({ collides: false, conflictingFile: null });
+
+            const result = await handleRenameMessage(job(), mockContext());
+
+            expect(result.status).toBe(RENAME_STATUS.DRY_RUN);
+            expect(checkCollision).toHaveBeenCalledTimes(2);
         });
     });
 

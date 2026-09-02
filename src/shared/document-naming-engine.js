@@ -11,6 +11,7 @@
  */
 
 const { applyTransforms } = require('./document-field-transforms');
+const { generateValue } = require('./document-field-generators');
 
 // SharePoint caps a filename at 255 chars and a full path at 400. Renaming into
 // a deep folder can breach the path limit long before the name limit, so the
@@ -29,8 +30,9 @@ const MAX_FILENAME_LENGTH = 200;
 // transforms (date:M_D_YYYY) legitimately emit it, and the per-type validate
 // regex already rejects any value that breaks the expected shape.
 const FILENAME_ILLEGAL = /["*:<>?/\\|]+/g;
-// eslint-disable-next-line no-control-regex -- matching control characters is
-// the point: OCR output can carry them and they must never reach a filename.
+// Matching control characters is the point here: OCR output can carry them and
+// they must never reach a filename.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\x00-\x1f\x7f]+/g;
 
 /**
@@ -125,6 +127,16 @@ function extractFields(text, ruleSet) {
     const missing = [];
 
     for (const field of Object.values(ruleSet.fields)) {
+        // Generated fields are minted rather than read. Because the value is
+        // random, a rendered name is not reproducible across runs -- see
+        // document-field-generators.js for what that implies for dry runs.
+        if (field.generate) {
+            values[field.name] = sanitizeToken(
+                applyTransforms(field.transform, generateValue(field.generate, field.length))
+            );
+            continue;
+        }
+
         const match = source.match(field.regex);
         let raw = match && match[1] !== undefined ? match[1] : null;
 

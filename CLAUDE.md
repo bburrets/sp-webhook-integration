@@ -80,8 +80,12 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
 `WIRE_251103B02FHR_$237,800.00.pdf` (keyed on the U.S. Bank PAR Number, not a date).
 
 - Rules live in `src/config/document-types/{check,costing,glje,wire}.json`, validated at load time.
-  CHECK and WIRE extract end to end today. **GLJE is blocked**: its trailing 6-digit id has no known
-  source (the document body shows only `JE-000001`). COSTING has no convention and is disabled.
+  CHECK, WIRE and GLJE all extract end to end today. COSTING has no convention and is disabled.
+- **GLJE's trailing 6-digit id is randomly generated**, not read from the document (confirmed
+  2026-09-02). So a dry-run GLJE name will NOT equal what a live run produces — check the shape, not
+  the value. A collision on it is bad luck, so the worker re-mints and retries; a collision on an
+  extracted value stays an exception. Idempotency holds because compliance is checked before any
+  value is minted.
 - **All rule sets are `"placeholder": true` pending business confirmation.** While any is, the
   worker refuses to rename no matter what `RENAME_DRY_RUN` says.
 - **The documents are OCR'd scans with degraded text** — they DO have a text layer, so the

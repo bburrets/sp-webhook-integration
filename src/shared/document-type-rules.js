@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { isKnownTransform } = require('./document-field-transforms');
+const { isKnownGenerator, isValidLength } = require('./document-field-generators');
 
 const DEFAULT_RULES_DIR = path.join(__dirname, '..', 'config', 'document-types');
 const TEMPLATE_PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
@@ -73,11 +74,32 @@ function validateFields(raw, problems) {
             continue;
         }
 
-        // Case-insensitive: source documents vary in capitalisation between
-        // vendors and systems, and no pattern here depends on case to match.
-        const regex = compilePattern(spec.pattern, `fields.${name}.pattern`, problems, 'i');
-        if (regex && regex.source.indexOf('(') === -1) {
-            problems.push(`fields.${name}.pattern must contain a capture group`);
+        // A field is either read out of the document or minted at rename time.
+        const isGenerated = spec.generate !== undefined;
+
+        if (isGenerated && spec.pattern !== undefined) {
+            problems.push(`fields.${name} cannot declare both "pattern" and "generate"`);
+        }
+
+        let regex = null;
+        if (isGenerated) {
+            if (!isKnownGenerator(spec.generate)) {
+                problems.push(`fields.${name}.generate is not a known generator: "${spec.generate}"`);
+            }
+            if (!isValidLength(spec.length)) {
+                problems.push(`fields.${name}.length must be a positive integer when "generate" is set`);
+            }
+            if (spec.required === false) {
+                // A generated value is always producible, so optional is meaningless.
+                problems.push(`fields.${name} is generated, so it cannot be optional`);
+            }
+        } else {
+            // Case-insensitive: source documents vary in capitalisation between
+            // vendors and systems, and no pattern here depends on case to match.
+            regex = compilePattern(spec.pattern, `fields.${name}.pattern`, problems, 'i');
+            if (regex && regex.source.indexOf('(') === -1) {
+                problems.push(`fields.${name}.pattern must contain a capture group`);
+            }
         }
 
         const transform = spec.transform === undefined ? [] : spec.transform;
@@ -101,7 +123,7 @@ function validateFields(raw, problems) {
             problems.push(`fields.${name}.required must be a boolean`);
         }
 
-        if (required === false && spec.default === undefined) {
+        if (!isGenerated && required === false && spec.default === undefined) {
             problems.push(`fields.${name} is optional so it must declare a "default"`);
         }
 
@@ -109,7 +131,9 @@ function validateFields(raw, problems) {
             name,
             pattern: spec.pattern,
             regex,
-            required: required !== false,
+            generate: isGenerated ? spec.generate : null,
+            length: isGenerated ? spec.length : null,
+            required: isGenerated ? true : required !== false,
             default: spec.default === undefined ? null : String(spec.default),
             transform: Array.isArray(transform) ? transform : [],
             maxLength: spec.maxLength === undefined ? null : spec.maxLength
@@ -330,6 +354,20 @@ function placeholderTypes(options = {}) {
     return getRuleSets(options).filter((r) => r.placeholder).map((r) => r.type);
 }
 
+/**
+ * Does this rule set mint any value at rename time?
+ *
+ * The worker uses this to decide what a name collision means: on a generated
+ * value it is bad luck and worth regenerating, on an extracted value it is
+ * information and belongs on the exception path.
+ *
+ * @param {Object} ruleSet
+ * @returns {boolean}
+ */
+function hasGeneratedFields(ruleSet) {
+    return Object.values(ruleSet?.fields || {}).some((field) => field.generate !== null);
+}
+
 /** Clear the module cache. Tests only. */
 function resetRuleSetCache() {
     cache = null;
@@ -343,6 +381,7 @@ module.exports = {
     templatePlaceholders,
     hasPlaceholderRules,
     placeholderTypes,
+    hasGeneratedFields,
     resetRuleSetCache,
     DEFAULT_RULES_DIR
 };

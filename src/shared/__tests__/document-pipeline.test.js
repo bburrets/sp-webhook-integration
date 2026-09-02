@@ -80,14 +80,30 @@ describe('document pipeline over real PDFs', () => {
             expect(extractFields(text, classification.ruleSet).values.glDate).toBe('06_30_2026');
         });
 
-        it('refuses to rename, because the 6-digit id source is unconfirmed', async () => {
-            // OutputBox names end in a consistent 6-digit id (GLJE_11_03_2025_129334)
-            // but the document body only shows JE-000001. Until that source is
-            // identified the rendered name fails its own convention, so the file
-            // lands on the exception path rather than being renamed wrongly.
-            const { proposal } = await runPipeline('glje');
-            expect(proposal.ok).toBe(false);
-            expect(proposal.reason).toMatch(/does not satisfy the convention for GLJE/);
+        it('renders a compliant name', async () => {
+            const { proposal, classification } = await runPipeline('glje');
+            expect(proposal.ok).toBe(true);
+            expect(proposal.name).toMatch(/^GLJE_06_30_2026_\d{6}\.pdf$/);
+            expect(isCompliant(proposal.name, classification.ruleSet)).toBe(true);
+        });
+
+        it('mints a different id on every run, since the id is random', async () => {
+            // The trailing 6 digits appear nowhere in the document; they are
+            // generated. A dry run's proposed GLJE name therefore will NOT equal
+            // the name a later live run produces -- check the shape, not the value.
+            const names = new Set();
+            for (let i = 0; i < 5; i += 1) {
+                // eslint-disable-next-line no-await-in-loop -- sequential by design
+                names.add((await runPipeline('glje')).proposal.name);
+            }
+            expect(names.size).toBeGreaterThan(1);
+        });
+
+        it('keeps the date stable even though the id varies', async () => {
+            const a = await runPipeline('glje');
+            const b = await runPipeline('glje');
+            const datePart = (n) => n.split('_').slice(1, 4).join('_');
+            expect(datePart(a.proposal.name)).toBe(datePart(b.proposal.name));
         });
     });
 

@@ -25,7 +25,7 @@ const { createLogger } = require('../shared/logger');
 const { getFileById, listFolderFiles } = require('../shared/sharepoint-folder-scanner');
 const { extractDocumentText } = require('../shared/document-content-extractor');
 const { classify } = require('../shared/document-classifier');
-const { getRuleSets } = require('../shared/document-type-rules');
+const { getRuleSets, hasGeneratedFields } = require('../shared/document-type-rules');
 const { isCompliant, buildProposedName } = require('../shared/document-naming-engine');
 const { checkCollision, renameFile } = require('../shared/sharepoint-file-renamer');
 const {
@@ -42,6 +42,12 @@ const { getRenameConfig, resolveDryRun } = require('../shared/document-rename-co
 // authoritative and cannot go stale.
 const FOLDER_CACHE_TTL_MS = 60000;
 const folderCache = new Map();
+
+// How many times to re-mint a generated value that collided. A collision on a
+// random id (GLJE's 6-digit number) is bad luck rather than a duplicate
+// document, so retrying is correct; a collision on an extracted value is
+// information and still goes to the exception path.
+const MAX_REGENERATION_ATTEMPTS = 5;
 
 /**
  * Statuses that cannot change while the file's content stays the same.
@@ -210,11 +216,15 @@ async function handleRenameMessage(message, context) {
         });
     }
 
-    const proposal = buildProposedName({
+    const rebuild = () => buildProposedName({
         fileName: file.name,
         text: extraction.text,
         ruleSet: classification.ruleSet
     });
+
+    // Mutable: a colliding generated value is re-minted below.
+    let proposal = rebuild();
+    const canRegenerate = hasGeneratedFields(classification.ruleSet);
 
     if (!proposal.ok) {
         return record({
@@ -235,11 +245,25 @@ async function handleRenameMessage(message, context) {
             driveId: renameConfig.driveId,
             context
         });
-        const collision = checkCollision({
+
+        let collision = checkCollision({
             proposedName: proposal.name,
             existingFiles,
             currentDriveItemId: file.driveItemId
         });
+
+        // Re-mint a colliding generated value rather than reporting it.
+        for (let i = 0; collision.collides && canRegenerate && i < MAX_REGENERATION_ATTEMPTS; i += 1) {
+            proposal = rebuild();
+            if (!proposal.ok) {
+                break;
+            }
+            collision = checkCollision({
+                proposedName: proposal.name,
+                existingFiles,
+                currentDriveItemId: file.driveItemId
+            });
+        }
 
         if (collision.collides) {
             return record({
@@ -262,7 +286,7 @@ async function handleRenameMessage(message, context) {
         });
     }
 
-    const result = await renameFile({
+    let result = await renameFile({
         accessToken,
         driveId: file.driveId,
         driveItemId: file.driveItemId,
@@ -270,6 +294,29 @@ async function handleRenameMessage(message, context) {
         dryRun: false,
         context
     });
+
+    // Graph is the final arbiter on collisions. If the value that collided was
+    // minted rather than extracted, mint another and try again.
+    for (let i = 0; result.collision && canRegenerate && i < MAX_REGENERATION_ATTEMPTS; i += 1) {
+        proposal = rebuild();
+        if (!proposal.ok) {
+            break;
+        }
+        logger.info('Regenerating a colliding generated value', {
+            service: 'rename-worker',
+            driveItemId: file.driveItemId,
+            attempt: i + 1,
+            newName: proposal.name
+        });
+        result = await renameFile({
+            accessToken,
+            driveId: file.driveId,
+            driveItemId: file.driveItemId,
+            newName: proposal.name,
+            dryRun: false,
+            context
+        });
+    }
 
     if (result.collision) {
         return record({
@@ -352,5 +399,6 @@ module.exports = {
     resetFolderCache,
     getCachedFolderFiles,
     DETERMINISTIC_STATUSES,
-    FOLDER_CACHE_TTL_MS
+    FOLDER_CACHE_TTL_MS,
+    MAX_REGENERATION_ATTEMPTS
 };

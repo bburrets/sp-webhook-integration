@@ -137,6 +137,8 @@ pattern or an unresolvable template placeholder throws rather than producing a w
 | `classify.contentPatterns` | Regexes matched against extracted text, case-insensitive. Each hit counts as one signal and is weighted **2×** a filename hit. |
 | `classify.minMatches` | Minimum signals for the type to be considered at all. |
 | `fields.<name>.pattern` | Case-insensitive regex; **capture group 1** is the value. |
+| `fields.<name>.generate` | Mint the value instead of reading it. Currently only `"digits"`. Mutually exclusive with `pattern`, and cannot be optional. |
+| `fields.<name>.length` | Digit count, required when `generate` is set. |
 | `fields.<name>.required` | Default `true`. An optional field must declare a `default`. |
 | `fields.<name>.transform` | Ordered transform chain (below). |
 | `fields.<name>.maxLength` | Truncation cap applied after transforms. |
@@ -152,6 +154,27 @@ pattern or an unresolvable template placeholder throws rather than producing a w
 Dates parse `M/D/YYYY`, `M-D-YY`, `MM.DD.YYYY` (US ordering) and `YYYY-MM-DD`. Two-digit years below
 70 read as 20xx. An impossible date (`13/45/2026`) yields an empty value, which is reported as a
 missing field rather than embedded in a filename.
+
+### Generated fields
+
+A field can be minted at rename time rather than read from the document:
+
+```json
+"jeNumber": { "generate": "digits", "length": 6, "required": true }
+```
+
+GLJE's trailing 6-digit id works this way — it appears nowhere in the document. Three consequences:
+
+- **A dry run's proposed GLJE name will not equal the name a later live run produces.** Check the
+  shape, not the exact value. CHECK and WIRE are fully derived from the document and *are*
+  reproducible.
+- **A collision on a generated value is bad luck, not information**, so the worker re-mints and
+  retries (up to 5 times) rather than raising `NameCollision`. A collision on an extracted value
+  still means something and still goes to the exception path.
+- **Idempotency still holds**, because a file is checked against its convention *before* any value
+  is generated. An already-correct file is skipped without ever minting a number.
+
+Values use `crypto.randomInt`, not `Math.random`.
 
 ### Sanitisation
 
@@ -234,18 +257,18 @@ confirmation.
 |---|---|---|---|
 | CHECK | `Check_{number}_{PAYEE}_{M}_{D}_{YYYY}.pdf` | `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf` | **Extracts end to end today.** Note `Check` is title case and the date is **not** zero-padded. |
 | WIRE | `WIRE_{parNumber}_${amount}.pdf` | `WIRE_251103B02FHR_$237,800.00.pdf` | **Extracts end to end today** when OCR is clean. `WIRE` is uppercase, single underscore, no date — the PAR Number encodes it (`251103` = 2025-11-03). Amount keeps `$` and commas. |
-| GLJE | `GLJE_{MM}_{DD}_{YYYY}_{6 digits}.pdf` | `GLJE_11_03_2025_129334.pdf` | **Blocked.** The G/L date extracts cleanly, but the trailing 6-digit id has no known source — the document body shows only `JE-000001`. Renders nothing until that is identified. |
+| GLJE | `GLJE_{MM}_{DD}_{YYYY}_{6 digits}.pdf` | `GLJE_11_03_2025_129334.pdf` | **Extracts end to end today.** The G/L date comes from the document; the trailing 6 digits are **randomly generated** (confirmed 2026-09-02), so the name is not reproducible between runs. |
 | COSTING | none | `Costing_01.pdf`, `costing_Image_001.pdf` | **No convention exists**, and OutputBox has no COSTING folder. Ships `"enabled": false`. |
 
 To go live:
 
-1. Confirm CHECK and WIRE above.
-2. **Say where the GLJE 6-digit id comes from** — this is the one hard blocker.
-3. Define a COSTING convention, or leave that type disabled.
-4. Set `"placeholder": false` on each confirmed type.
-5. Update the "are all still placeholders" assertion in
+1. Confirm CHECK, WIRE and GLJE above.
+2. Define a COSTING convention, or leave that type disabled.
+3. Set `"placeholder": false` on each confirmed type.
+4. Update the "are all still placeholders" assertion in
    `src/shared/__tests__/document-type-rules.test.js`.
-6. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
+5. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
+   For GLJE, review the shape — the id will differ when the live run mints a new one.
 
 Optional accuracy improvement: the `B` → `8` OCR substitution in wire PAR numbers is systematic and
 positional. A targeted correction would convert a chunk of current `MissingFields` exceptions into
