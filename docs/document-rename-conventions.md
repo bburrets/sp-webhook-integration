@@ -41,11 +41,10 @@ rather than the date.
 Two consequences for the sweep:
 
 - **The document type is decided by the folder, not the content.** A file under `CHECK/` is a check.
-  That is a far stronger signal than any content pattern, and it is not yet used — the classifier
-  works from filename and content only. Adding a `folderHints` signal is the highest-value
-  improvement available.
-- **The scanner does not recurse.** Pointing it at `OutputBox/WIRE` finds nothing, because the files
-  live in `OutputBox/WIRE/2025_11`. Either configure one leaf folder at a time, or add recursion.
+  The classifier weights this above content and filename — see below.
+- **Subfolders are walked by default.** Pointing at the library root covers every type and every
+  month, and needs no maintenance as new month folders appear. Ceilings of 20,000 files and 500
+  folders stop a misconfigured scan from issuing thousands of requests.
 
 ### The documents are OCR'd scans, and the OCR is poor
 
@@ -194,19 +193,56 @@ Two guards make renames safe to repeat:
 
 ## Configuration
 
+The scan target is a **URL you paste from the browser address bar** — not a site path, drive id or
+drive-relative folder path, none of which are visible anywhere in SharePoint. The library name in
+the URL is resolved to a Graph drive at scan time.
+
 | App setting | Default | Meaning |
 |---|---|---|
 | `RENAME_ENABLED` | `false` | Master switch. The sweep does nothing until this is `true`. |
 | `RENAME_DRY_RUN` | `true` | When true, everything runs except the `PATCH`; the proposed name is written to `RenameDetail`. |
-| `RENAME_SITE_PATH` | — | e.g. `fambrandsllc.sharepoint.com:/sites/Accounting_Research:` |
-| `RENAME_LIST_ID` | — | The document library's list id, for status-column writes. |
-| `RENAME_FOLDER_PATH` | — | Folder path under the drive root, e.g. `Shared Documents/FIN SCAN Inbox`. |
-| `RENAME_DRIVE_ID` | — | Optional; addresses a specific drive instead of the site's default. |
-| `RENAME_MAX_PER_SWEEP` | `500` | Cap on candidates enqueued per sweep. Guards against a misconfigured path pointing at a whole library. |
+| `RENAME_LIBRARY_URL` | — | The library or folder to scan. See below. |
+| `RENAME_RECURSIVE` | `true` | Walk subfolders. Leave on: this library nests by type and month. |
+| `RENAME_MAX_PER_SWEEP` | `500` | Cap on candidates enqueued per sweep, so a first run against a backlog does not enqueue everything at once. |
 
 Both booleans default to the safe value: a missing or misspelled setting cannot cause a live rename.
 
----
+### What to put in RENAME_LIBRARY_URL
+
+Open the library or folder in SharePoint and copy the address bar. Every form these produce works:
+
+```
+# whole library, all four type folders and every month underneath
+https://.../sites/Accounting_Research/OutputBox/Forms/AllItems.aspx
+
+# one type, all months underneath
+https://.../sites/Accounting_Research/OutputBox/Forms/AllItems.aspx?id=%2Fsites%2F...%2FOutputBox%2FCHECK
+
+# one month only
+https://.../sites/Accounting_Research/OutputBox/CHECK/2026/2026_01
+```
+
+The URL sets the **starting point**; `RENAME_RECURSIVE` decides whether everything below it is
+included. Pointing at the library root with recursion on is the intended configuration — it needs no
+maintenance as new month folders appear.
+
+There is deliberately no list id or site path to configure. Status columns are written through
+`/drives/{driveId}/items/{itemId}/listItem/fields`, which needs only what the scan already knows.
+
+### The folder decides the document type
+
+Because `OutputBox` is organised by type, the folder is the strongest classification signal
+available and is weighted above both content (2×) and filename (1×):
+
+| Signal | Weight |
+|---|---|
+| Folder segment matches `folderHints` | 4 |
+| Each matching `contentPattern` | 2 |
+| Filename matches `filenameHints` | 1 |
+
+A file under `CHECK/2026/2026_01` is a check even if OCR salvaged nothing from it and the filename is
+misleading. Matching is on whole path segments, so a folder called `CHECKLIST` is not the `CHECK`
+folder. When no folder hint matches, classification falls back to content and filename as before.
 
 ## SharePoint columns
 

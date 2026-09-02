@@ -99,8 +99,14 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
   to reject the known corruptions — the WIRE regex requires a literal `B` in position 7, which is
   why `WIRE_251125801YWH_...` (already in the library from an earlier attempt) is refused.
   Bad extractions fail safe to the exception path; hit rate is the open question a dry run measures.
-- **The scanner does NOT recurse**, and folder-based classification is not implemented even though
-  the folder decides the type outright — the highest-value improvement left.
+- **Configuration is a pasted SharePoint URL** (`RENAME_LIBRARY_URL`), not a site path / drive id /
+  folder path. The library name is resolved to a drive at scan time, and status columns are written
+  via `/drives/{driveId}/items/{itemId}/listItem/fields`, so there is no list id to configure either.
+  Subfolders are walked by default (`RENAME_RECURSIVE=true`) — pointing at the library root covers
+  every type and month and needs no upkeep as new month folders appear.
+- **The folder decides the document type.** `folderHints` is weighted 4, content 2, filename 1, so a
+  file under `CHECK/` is a check regardless of OCR quality or a misleading name. Whole-segment match,
+  so `CHECKLIST` is not `CHECK`.
 - State lives in SharePoint columns on the library (`RenameStatus`, `RenameAttempts`,
   `RenameContentHash`, ...), not Table Storage — the folder listing already expands
   `listItem($expand=fields)`, so it is free. Columns must be created before enabling.

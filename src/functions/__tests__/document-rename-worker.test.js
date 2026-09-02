@@ -30,8 +30,11 @@ jest.mock('../../shared/document-rename-status', () => {
 
 jest.mock('../../shared/document-rename-config', () => ({
     getRenameConfig: jest.fn(() => ({
-        enabled: true, dryRun: false, sitePath: 'host:/sites/X:', listId: 'list-1',
-        folderPath: 'Inbox', driveId: null, maxPerSweep: 500
+        enabled: true,
+        dryRun: false,
+        libraryUrl: 'https://contoso.sharepoint.com/sites/Finance/OutputBox/Forms/AllItems.aspx',
+        recursive: true,
+        maxPerSweep: 500
     })),
     resolveDryRun: jest.fn(() => ({ dryRun: false, reason: null }))
 }));
@@ -67,14 +70,11 @@ const EXPECTED_NAME = 'Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf';
 
 function job(overrides = {}) {
     return {
-        driveItemId: 'item-1',
         driveId: 'drive-1',
-        listItemId: '42',
+        driveItemId: 'item-1',
         name: 'scan_0417.pdf',
+        folderPath: 'CHECK/2026/2026_01',
         sha1Hash: 'HASH1',
-        sitePath: 'host:/sites/X:',
-        listId: 'list-1',
-        folderPath: 'Inbox',
         attempts: 0,
         enqueuedAt: '2026-09-01T00:00:00Z',
         ...overrides
@@ -85,7 +85,6 @@ function scannedFile(overrides = {}) {
     return {
         driveItemId: 'item-1',
         driveId: 'drive-1',
-        listItemId: '42',
         name: 'scan_0417.pdf',
         sha1Hash: 'HASH1',
         fields: {},
@@ -216,16 +215,30 @@ describe('document-rename-worker', () => {
             expect(renameFile).not.toHaveBeenCalled();
         });
 
-        it('records Unclassified with the classifier reason', async () => {
+        it('records Unclassified when neither folder nor content identifies a type', async () => {
             extractDocumentText.mockResolvedValue({
                 text: 'Meeting notes about nothing financial at all whatsoever here',
                 hasTextLayer: true, charCount: 60, pageCount: 1, byteLength: 1000, unsupported: false
             });
-            const result = await handleRenameMessage(job(), mockContext());
+            // No folder hint to fall back on.
+            const result = await handleRenameMessage(job({ folderPath: 'Misc/2026' }), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.UNCLASSIFIED);
             expect(recorded().detail).toMatch(/did not match|No document type matched/i);
             expect(recorded().attempts).toBe(MAX_ATTEMPTS);
+        });
+
+        it('classifies from the folder even when the content says nothing', async () => {
+            // The folder is the strongest signal in this library: a file under
+            // CHECK/ is a check regardless of what OCR salvaged from it.
+            extractDocumentText.mockResolvedValue({
+                text: 'illegible scan output with no recognisable labels at all here',
+                hasTextLayer: true, charCount: 60, pageCount: 1, byteLength: 1000, unsupported: false
+            });
+            const result = await handleRenameMessage(job(), mockContext());
+
+            expect(result.status).toBe(RENAME_STATUS.MISSING_FIELDS);
+            expect(recorded().docType).toBe('CHECK');
         });
 
         it('records MissingFields naming the fields, and the detected type', async () => {
@@ -233,7 +246,7 @@ describe('document-rename-worker', () => {
                 text: 'General Journal FAM, LLC\nJE-000001 posted to the ledger\n',
                 hasTextLayer: true, charCount: 60, pageCount: 1, byteLength: 1000, unsupported: false
             });
-            const result = await handleRenameMessage(job(), mockContext());
+            const result = await handleRenameMessage(job({ folderPath: 'GLJE/2026_06' }), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.MISSING_FIELDS);
             expect(recorded().docType).toBe('GLJE');
@@ -294,7 +307,12 @@ describe('document-rename-worker', () => {
 
         it('lists the folder to make that prediction', async () => {
             await handleRenameMessage(job(), mockContext());
-            expect(listFolderFiles).toHaveBeenCalledWith(expect.objectContaining({ folderPath: 'Inbox' }));
+            expect(listFolderFiles).toHaveBeenCalledWith(expect.objectContaining({
+                driveId: 'drive-1',
+                folderPath: 'CHECK/2026/2026_01',
+                // Not recursive: a name can only collide inside its own folder.
+                recursive: false
+            }));
         });
 
         it('caches the listing across messages in the same sweep', async () => {
@@ -325,6 +343,7 @@ describe('document-rename-worker', () => {
                 pageCount: 1, byteLength: 2048, unsupported: false
             });
         }
+        const gljeJob = (o = {}) => job({ folderPath: 'GLJE/2026_06', ...o });
 
         it('retries with a fresh id when Graph reports a collision', async () => {
             useGlje();
@@ -332,7 +351,7 @@ describe('document-rename-worker', () => {
                 .mockResolvedValueOnce({ renamed: false, collision: true, newName: 'x', error: 'taken' })
                 .mockResolvedValueOnce({ renamed: true, collision: false, newName: 'y', error: null });
 
-            const result = await handleRenameMessage(job(), mockContext());
+            const result = await handleRenameMessage(gljeJob(), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.RENAMED);
             expect(renameFile).toHaveBeenCalledTimes(2);
@@ -346,7 +365,7 @@ describe('document-rename-worker', () => {
                 renamed: false, collision: true, newName: 'x', error: 'taken'
             });
 
-            const result = await handleRenameMessage(job(), mockContext());
+            const result = await handleRenameMessage(gljeJob(), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.NAME_COLLISION);
             expect(renameFile).toHaveBeenCalledTimes(MAX_REGENERATION_ATTEMPTS + 1);
@@ -371,7 +390,7 @@ describe('document-rename-worker', () => {
                 .mockReturnValueOnce({ collides: true, conflictingFile: { driveItemId: 'other' } })
                 .mockReturnValue({ collides: false, conflictingFile: null });
 
-            const result = await handleRenameMessage(job(), mockContext());
+            const result = await handleRenameMessage(gljeJob(), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.DRY_RUN);
             expect(checkCollision).toHaveBeenCalledTimes(2);

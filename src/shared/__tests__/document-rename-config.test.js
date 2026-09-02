@@ -6,14 +6,18 @@ jest.mock('../document-type-rules', () => ({
 const { hasPlaceholderRules, placeholderTypes } = require('../document-type-rules');
 const {
     getRenameConfig,
+    getScanTarget,
     validateRenameConfig,
     resolveDryRun,
     DEFAULT_MAX_PER_SWEEP
 } = require('../document-rename-config');
 
+const LIBRARY_URL =
+    'https://contoso.sharepoint.com/sites/Finance/OutputBox/Forms/AllItems.aspx';
+
 const RENAME_VARS = [
-    'RENAME_ENABLED', 'RENAME_DRY_RUN', 'RENAME_SITE_PATH',
-    'RENAME_LIST_ID', 'RENAME_FOLDER_PATH', 'RENAME_DRIVE_ID', 'RENAME_MAX_PER_SWEEP'
+    'RENAME_ENABLED', 'RENAME_DRY_RUN', 'RENAME_LIBRARY_URL',
+    'RENAME_RECURSIVE', 'RENAME_MAX_PER_SWEEP'
 ];
 
 describe('document-rename-config', () => {
@@ -72,37 +76,64 @@ describe('document-rename-config', () => {
             expect(getRenameConfig().maxPerSweep).toBe(DEFAULT_MAX_PER_SWEEP);
         });
 
-        it('reads the location settings', () => {
-            process.env.RENAME_SITE_PATH = 'host:/sites/X:';
-            process.env.RENAME_LIST_ID = 'list-1';
-            process.env.RENAME_FOLDER_PATH = 'Shared Documents/Inbox';
-            expect(getRenameConfig()).toMatchObject({
-                sitePath: 'host:/sites/X:', listId: 'list-1', folderPath: 'Shared Documents/Inbox'
+        it('reads the library URL', () => {
+            process.env.RENAME_LIBRARY_URL = LIBRARY_URL;
+            expect(getRenameConfig().libraryUrl).toBe(LIBRARY_URL);
+        });
+
+        it('recurses into subfolders unless told otherwise', () => {
+            // This library nests by type and month, so a non-recursive scan of a
+            // sensible starting point would find nothing.
+            expect(getRenameConfig().recursive).toBe(true);
+            process.env.RENAME_RECURSIVE = 'false';
+            expect(getRenameConfig().recursive).toBe(false);
+        });
+    });
+
+    describe('getScanTarget', () => {
+        it('returns null when no URL is configured', () => {
+            expect(getScanTarget()).toBeNull();
+        });
+
+        it('resolves a library URL into its Graph parts', () => {
+            process.env.RENAME_LIBRARY_URL = LIBRARY_URL;
+            expect(getScanTarget()).toMatchObject({
+                sitePath: 'contoso.sharepoint.com:/sites/Finance:',
+                libraryName: 'OutputBox',
+                folderPath: '',
+                isRoot: true
             });
+        });
+
+        it('resolves a subfolder URL', () => {
+            process.env.RENAME_LIBRARY_URL =
+                'https://contoso.sharepoint.com/sites/Finance/OutputBox/Forms/AllItems.aspx'
+                + '?id=%2Fsites%2FFinance%2FOutputBox%2FCHECK%2F2026';
+            expect(getScanTarget()).toMatchObject({ libraryName: 'OutputBox', folderPath: 'CHECK/2026' });
         });
     });
 
     describe('validateRenameConfig', () => {
-        it('names every missing setting', () => {
+        it('reports a missing URL with an example', () => {
             const problems = validateRenameConfig();
-            expect(problems).toHaveLength(3);
-            expect(problems.join(' ')).toMatch(/RENAME_SITE_PATH/);
-            expect(problems.join(' ')).toMatch(/RENAME_LIST_ID/);
-            expect(problems.join(' ')).toMatch(/RENAME_FOLDER_PATH/);
+            expect(problems).toHaveLength(1);
+            expect(problems[0]).toMatch(/RENAME_LIBRARY_URL is not set/);
+            expect(problems[0]).toMatch(/AllItems\.aspx/);
         });
 
         it('passes a complete configuration', () => {
-            process.env.RENAME_SITE_PATH = 'host:/sites/X:';
-            process.env.RENAME_LIST_ID = 'list-1';
-            process.env.RENAME_FOLDER_PATH = 'Inbox';
+            process.env.RENAME_LIBRARY_URL = LIBRARY_URL;
             expect(validateRenameConfig()).toEqual([]);
         });
 
-        it('accepts a driveId in place of a folder path', () => {
-            process.env.RENAME_SITE_PATH = 'host:/sites/X:';
-            process.env.RENAME_LIST_ID = 'list-1';
-            process.env.RENAME_DRIVE_ID = 'b!abc';
-            expect(validateRenameConfig()).toEqual([]);
+        it('reports a URL it cannot parse', () => {
+            process.env.RENAME_LIBRARY_URL = 'not a url';
+            expect(validateRenameConfig()[0]).toMatch(/could not be parsed/);
+        });
+
+        it('reports a URL that points at a site rather than a library', () => {
+            process.env.RENAME_LIBRARY_URL = 'https://contoso.sharepoint.com/sites/Finance';
+            expect(validateRenameConfig()[0]).toMatch(/points at the site, not a document library/);
         });
     });
 

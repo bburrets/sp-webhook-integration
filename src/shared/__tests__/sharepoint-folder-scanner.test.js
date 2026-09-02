@@ -9,6 +9,7 @@ const { graphRequest } = require('../graph-request');
 const {
     listFolderFiles,
     getFileById,
+    resolveDrive,
     buildChildrenUrl,
     encodeFolderPath,
     normaliseFile,
@@ -183,6 +184,112 @@ describe('sharepoint-folder-scanner', () => {
         it('propagates a Graph failure so the caller can retry', async () => {
             graphRequest.mockRejectedValue(new Error('Graph down'));
             await expect(listFolderFiles({ accessToken: 't', sitePath: SITE_PATH })).rejects.toThrow('Graph down');
+        });
+    });
+
+    describe('resolveDrive', () => {
+        it('matches a library by drive name', async () => {
+            graphRequest.mockResolvedValue({
+                data: { value: [{ id: 'd1', name: 'OutputBox', webUrl: 'https://h/sites/X/OutputBox' }] }
+            });
+            const drive = await resolveDrive({ accessToken: 't', sitePath: SITE_PATH, libraryName: 'OutputBox' });
+            expect(drive.id).toBe('d1');
+        });
+
+        it('matches the default library by its webUrl tail', async () => {
+            // The default library's drive is named "Documents" while its URL
+            // says "Shared Documents".
+            graphRequest.mockResolvedValue({
+                data: {
+                    value: [{
+                        id: 'd2',
+                        name: 'Documents',
+                        webUrl: 'https://h/sites/X/Shared%20Documents'
+                    }]
+                }
+            });
+            const drive = await resolveDrive({
+                accessToken: 't', sitePath: SITE_PATH, libraryName: 'Shared Documents'
+            });
+            expect(drive.id).toBe('d2');
+        });
+
+        it('is case-insensitive', async () => {
+            graphRequest.mockResolvedValue({
+                data: { value: [{ id: 'd1', name: 'OutputBox', webUrl: 'https://h/x' }] }
+            });
+            expect((await resolveDrive({
+                accessToken: 't', sitePath: SITE_PATH, libraryName: 'outputbox'
+            })).id).toBe('d1');
+        });
+
+        it('lists what is available when the library is not found', async () => {
+            graphRequest.mockResolvedValue({
+                data: { value: [{ id: 'd1', name: 'Documents', webUrl: 'https://h/x' }] }
+            });
+            await expect(resolveDrive({
+                accessToken: 't', sitePath: SITE_PATH, libraryName: 'Nope'
+            })).rejects.toThrow(/No document library named "Nope".*Available: Documents/s);
+        });
+    });
+
+    describe('recursive traversal', () => {
+        /** A Graph folder child. */
+        const folder = (name) => ({ id: `f-${name}`, name, folder: { childCount: 1 } });
+
+        it('walks subfolders when recursive', async () => {
+            graphRequest
+                .mockResolvedValueOnce({ data: { value: [folder('CHECK')] } })
+                .mockResolvedValueOnce({ data: { value: [folder('2026')] } })
+                .mockResolvedValueOnce({ data: { value: [driveItemFile({ id: 'x', name: 'x.pdf' })] } });
+
+            const result = await listFolderFiles({
+                accessToken: 't', driveId: 'd1', recursive: true
+            });
+
+            expect(graphRequest).toHaveBeenCalledTimes(3);
+            expect(result.files).toHaveLength(1);
+            expect(result.foldersVisited).toBe(3);
+        });
+
+        it('records each file\'s folder path, which identifies its type', async () => {
+            graphRequest
+                .mockResolvedValueOnce({ data: { value: [folder('WIRE')] } })
+                .mockResolvedValueOnce({ data: { value: [driveItemFile({ id: 'x', name: 'x.pdf' })] } });
+
+            const result = await listFolderFiles({
+                accessToken: 't', driveId: 'd1', recursive: true
+            });
+            expect(result.files[0].folderPath).toBe('WIRE');
+        });
+
+        it('builds nested paths correctly', async () => {
+            graphRequest
+                .mockResolvedValueOnce({ data: { value: [folder('CHECK')] } })
+                .mockResolvedValueOnce({ data: { value: [folder('2026')] } })
+                .mockResolvedValueOnce({ data: { value: [driveItemFile({ id: 'x', name: 'x.pdf' })] } });
+
+            const result = await listFolderFiles({
+                accessToken: 't', driveId: 'd1', recursive: true
+            });
+            expect(result.files[0].folderPath).toBe('CHECK/2026');
+        });
+
+        it('does not descend when recursive is false', async () => {
+            graphRequest.mockResolvedValue({ data: { value: [folder('CHECK')] } });
+            const result = await listFolderFiles({
+                accessToken: 't', driveId: 'd1', recursive: false
+            });
+            expect(graphRequest).toHaveBeenCalledTimes(1);
+            expect(result.foldersVisited).toBe(1);
+        });
+
+        it('starts from a subfolder when given one', async () => {
+            graphRequest.mockResolvedValue({ data: { value: [] } });
+            await listFolderFiles({
+                accessToken: 't', driveId: 'd1', folderPath: 'CHECK/2026', recursive: true
+            });
+            expect(graphRequest.mock.calls[0][0].url).toContain('root:/CHECK/2026:/children');
         });
     });
 

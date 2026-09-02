@@ -10,9 +10,8 @@
     "AZURE_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=webhookstatestorage;AccountKey=your-key;EndpointSuffix=core.windows.net",
     "RENAME_ENABLED": "false",
     "RENAME_DRY_RUN": "true",
-    "RENAME_SITE_PATH": "fambrandsllc.sharepoint.com:/sites/Accounting_Research:",
-    "RENAME_LIST_ID": "",
-    "RENAME_FOLDER_PATH": "",
-    "RENAME_MAX_PER_SWEEP": "500"
+    "RENAME_MAX_PER_SWEEP": "500",
+    "RENAME_LIBRARY_URL": "https://fambrandsllc.sharepoint.com/sites/Accounting_Research/OutputBox/Forms/AllItems.aspx",
+    "RENAME_RECURSIVE": "true"
   }
 }

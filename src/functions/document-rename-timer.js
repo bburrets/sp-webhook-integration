@@ -3,6 +3,11 @@
  * Hourly sweep of one folder in a document library. Enumerates the folder,
  * decides which files need work, and enqueues one message per candidate.
  *
+ * The scan target is a SharePoint URL and subfolders are walked by default.
+ * This library nests by type and month (CHECK/2026/2026_01), so a single-folder
+ * scan would need reconfiguring every month, and the folder a file sits in is
+ * also what identifies its document type.
+ *
  * The timer performs NO file I/O and NO writes. It lists, filters, and enqueues.
  * All downloading, parsing, and renaming happens in document-rename-worker, one
  * file per invocation, so neither function can approach the 5-minute
@@ -20,12 +25,13 @@
 const { app, output } = require('@azure/functions');
 const { getAccessToken } = require('../shared/auth');
 const { createLogger } = require('../shared/logger');
-const { listFolderFiles } = require('../shared/sharepoint-folder-scanner');
+const { listFolderFiles, resolveDrive } = require('../shared/sharepoint-folder-scanner');
 const { getRuleSets } = require('../shared/document-type-rules');
 const { isCompliant, getExtension } = require('../shared/document-naming-engine');
 const { readState, isExhausted, isTerminal } = require('../shared/document-rename-status');
 const {
     getRenameConfig,
+    getScanTarget,
     validateRenameConfig,
     resolveDryRun
 } = require('../shared/document-rename-config');
@@ -126,16 +132,14 @@ function selectCandidates({ files, ruleSets, maxPerSweep = Infinity }) {
  * @param {Object} params
  * @returns {string} JSON message
  */
-function buildRenameMessage({ file, state, renameConfig, enqueuedAt }) {
+function buildRenameMessage({ file, state, driveId, enqueuedAt }) {
     return JSON.stringify({
+        driveId,
         driveItemId: file.driveItemId,
-        driveId: file.driveId,
-        listItemId: file.listItemId,
         name: file.name,
+        // The folder identifies the document type, so the worker needs it.
+        folderPath: file.folderPath || '',
         sha1Hash: file.sha1Hash,
-        sitePath: renameConfig.sitePath,
-        listId: renameConfig.listId,
-        folderPath: renameConfig.folderPath,
         attempts: state.attempts,
         enqueuedAt
     });
@@ -171,13 +175,22 @@ async function runSweep(context) {
     }
 
     const { dryRun, reason: dryRunReason } = resolveDryRun(renameConfig);
+    const target = getScanTarget(renameConfig);
     const accessToken = await getAccessToken(context);
 
-    const { files, folderCount, truncated } = await listFolderFiles({
+    // The URL names a library; Graph needs the drive behind it.
+    const drive = await resolveDrive({
         accessToken,
-        sitePath: renameConfig.sitePath,
-        folderPath: renameConfig.folderPath,
-        driveId: renameConfig.driveId,
+        sitePath: target.sitePath,
+        libraryName: target.libraryName,
+        context
+    });
+
+    const { files, foldersVisited, truncated } = await listFolderFiles({
+        accessToken,
+        driveId: drive.id,
+        folderPath: target.folderPath,
+        recursive: renameConfig.recursive,
         context
     });
 
@@ -188,8 +201,7 @@ async function runSweep(context) {
 
     const enqueuedAt = new Date().toISOString();
     const messages = candidates.map(({ file, state }) =>
-        buildRenameMessage({ file, state, renameConfig, enqueuedAt })
-    );
+        buildRenameMessage({ file, state, driveId: drive.id, enqueuedAt }));
 
     if (messages.length > 0) {
         context.extraOutputs.set(renameQueueOutput, messages);
@@ -206,9 +218,11 @@ async function runSweep(context) {
 
     logger.info('Document rename sweep complete', {
         service: 'rename-timer',
-        folderPath: renameConfig.folderPath || '(root)',
+        library: target.libraryName,
+        folderPath: target.folderPath || '(library root)',
+        recursive: renameConfig.recursive,
+        foldersVisited,
         filesSeen: files.length,
-        subFolders: folderCount,
         enqueued: messages.length,
         deferred,
         skipped,

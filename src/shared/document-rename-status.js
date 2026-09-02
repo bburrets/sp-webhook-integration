@@ -15,6 +15,12 @@
  * handling; a throttled status write would throw and force the queue to retry
  * the whole file, re-downloading and re-parsing it. The retry-aware path is
  * worth more here than the reuse.
+ *
+ * Items are addressed as /drives/{driveId}/items/{itemId}/listItem/fields
+ * rather than /sites/{sitePath}/lists/{listId}/items/{id}. Both write the same
+ * columns, but the drive form needs only what the scan already has, which
+ * removes a site path and a list id from the configuration an operator has to
+ * supply.
  */
 
 const { createLogger } = require('./logger');
@@ -119,9 +125,8 @@ function isTerminal(status) {
  *
  * @param {Object} params
  * @param {string} params.accessToken
- * @param {string} params.sitePath
- * @param {string} params.listId
- * @param {string} params.listItemId
+ * @param {string} params.driveId
+ * @param {string} params.driveItemId
  * @param {string} params.status - One of RENAME_STATUS
  * @param {string|null} [params.docType]
  * @param {string|null} [params.detail]
@@ -133,9 +138,8 @@ function isTerminal(status) {
  */
 async function writeStatus({
     accessToken,
-    sitePath,
-    listId,
-    listItemId,
+    driveId,
+    driveItemId,
     status,
     docType = null,
     detail = null,
@@ -146,10 +150,10 @@ async function writeStatus({
 }) {
     const logger = createLogger(context);
 
-    if (!listItemId || !listId || !sitePath) {
-        logger.warn('Cannot write rename status without sitePath, listId and listItemId', {
+    if (!driveId || !driveItemId) {
+        logger.warn('Cannot write rename status without driveId and driveItemId', {
             service: 'rename-status',
-            listItemId,
+            driveItemId,
             status
         });
         return false;
@@ -176,19 +180,13 @@ async function writeStatus({
         fields[STATUS_FIELDS.contentHash] = contentHash;
     }
 
-    const url = `${config.api.graph.baseUrl}/sites/${sitePath}/lists/${listId}/items/${listItemId}`;
+    const url = `${config.api.graph.baseUrl}/drives/${driveId}/items/${driveItemId}/listItem/fields`;
 
     try {
-        await graphRequest({
-            url,
-            method: 'patch',
-            accessToken,
-            data: { fields },
-            context
-        });
+        await graphRequest({ url, method: 'patch', accessToken, data: fields, context });
         logger.debug('Rename status written', {
             service: 'rename-status',
-            listItemId,
+            driveItemId,
             status,
             attempts
         });
@@ -196,7 +194,7 @@ async function writeStatus({
     } catch (error) {
         logger.error('Failed to write rename status', {
             service: 'rename-status',
-            listItemId,
+            driveItemId,
             status,
             graphStatus: error.response?.status || null,
             error: error.message

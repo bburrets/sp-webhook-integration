@@ -7,6 +7,9 @@
         ".pdf"
     ],
     "classify": {
+        "folderHints": [
+            "wire"
+        ],
         "filenameHints": [
             "wire"
         ],

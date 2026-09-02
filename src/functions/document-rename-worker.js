@@ -68,15 +68,18 @@ function resetFolderCache() {
  * Folder listing with a short TTL.
  * @returns {Promise<Object[]>}
  */
-async function getCachedFolderFiles({ accessToken, sitePath, folderPath, driveId, context }) {
-    const key = `${driveId || sitePath}|${folderPath || ''}`;
+async function getCachedFolderFiles({ accessToken, driveId, folderPath, context }) {
+    const key = `${driveId}|${folderPath || ''}`;
     const cached = folderCache.get(key);
 
     if (cached && Date.now() - cached.at < FOLDER_CACHE_TTL_MS) {
         return cached.files;
     }
 
-    const { files } = await listFolderFiles({ accessToken, sitePath, folderPath, driveId, context });
+    // Not recursive: a filename can only collide inside its own folder.
+    const { files } = await listFolderFiles({
+        accessToken, driveId, folderPath, recursive: false, context
+    });
     folderCache.set(key, { at: Date.now(), files });
     return files;
 }
@@ -107,14 +110,16 @@ async function handleRenameMessage(message, context) {
     const renameConfig = getRenameConfig();
     const { dryRun, reason: dryRunReason } = resolveDryRun(renameConfig);
 
-    const sitePath = job.sitePath || renameConfig.sitePath;
-    const listId = job.listId || renameConfig.listId;
+    const { driveId, driveItemId } = job;
+    // The folder a file sits in identifies its document type in this library.
+    const folderPath = job.folderPath || '';
     const priorAttempts = Number(job.attempts) || 0;
 
     logger.info('Processing rename candidate', {
         service: 'rename-worker',
-        driveItemId: job.driveItemId,
+        driveItemId,
         name: job.name,
+        folderPath,
         priorAttempts,
         dequeueCount: context.triggerMetadata?.dequeueCount,
         dryRun
@@ -127,9 +132,8 @@ async function handleRenameMessage(message, context) {
     const record = async ({ status, docType = null, detail = null, attempts = null, previousName = null, contentHash = null }) => {
         await writeStatus({
             accessToken: await getAccessToken(context),
-            sitePath,
-            listId,
-            listItemId: job.listItemId,
+            driveId,
+            driveItemId,
             status,
             docType,
             detail,
@@ -140,7 +144,7 @@ async function handleRenameMessage(message, context) {
         });
         logger.info('Rename outcome recorded', {
             service: 'rename-worker',
-            driveItemId: job.driveItemId,
+            driveItemId,
             name: job.name,
             status,
             docType,
@@ -153,17 +157,12 @@ async function handleRenameMessage(message, context) {
 
     // Re-read the file: the sweep's snapshot may be stale, and this yields a
     // fresh pre-signed download URL.
-    const file = await getFileById({
-        accessToken,
-        driveId: job.driveId,
-        driveItemId: job.driveItemId,
-        context
-    });
+    const file = await getFileById({ accessToken, driveId, driveItemId, context });
 
     if (!file) {
         logger.info('Skipping rename, file no longer exists', {
             service: 'rename-worker',
-            driveItemId: job.driveItemId,
+            driveItemId,
             name: job.name
         });
         return { status: 'Gone' };
@@ -175,7 +174,7 @@ async function handleRenameMessage(message, context) {
     if (ruleSets.some((ruleSet) => isCompliant(file.name, ruleSet))) {
         logger.info('Skipping rename, name already compliant', {
             service: 'rename-worker',
-            driveItemId: job.driveItemId,
+            driveItemId,
             name: file.name
         });
         return { status: RENAME_STATUS.ALREADY_COMPLIANT };
@@ -206,7 +205,12 @@ async function handleRenameMessage(message, context) {
         });
     }
 
-    const classification = classify({ fileName: file.name, text: extraction.text, ruleSets });
+    const classification = classify({
+        fileName: file.name,
+        text: extraction.text,
+        folderPath,
+        ruleSets
+    });
 
     if (!classification.ruleSet) {
         return record({
@@ -239,17 +243,13 @@ async function handleRenameMessage(message, context) {
     // happen to surface a real 409.
     if (dryRun) {
         const existingFiles = await getCachedFolderFiles({
-            accessToken,
-            sitePath,
-            folderPath: job.folderPath || renameConfig.folderPath,
-            driveId: renameConfig.driveId,
-            context
+            accessToken, driveId, folderPath, context
         });
 
         let collision = checkCollision({
             proposedName: proposal.name,
             existingFiles,
-            currentDriveItemId: file.driveItemId
+            currentDriveItemId: driveItemId
         });
 
         // Re-mint a colliding generated value rather than reporting it.
@@ -261,7 +261,7 @@ async function handleRenameMessage(message, context) {
             collision = checkCollision({
                 proposedName: proposal.name,
                 existingFiles,
-                currentDriveItemId: file.driveItemId
+                currentDriveItemId: driveItemId
             });
         }
 
@@ -288,8 +288,8 @@ async function handleRenameMessage(message, context) {
 
     let result = await renameFile({
         accessToken,
-        driveId: file.driveId,
-        driveItemId: file.driveItemId,
+        driveId,
+        driveItemId,
         newName: proposal.name,
         dryRun: false,
         context
@@ -304,17 +304,12 @@ async function handleRenameMessage(message, context) {
         }
         logger.info('Regenerating a colliding generated value', {
             service: 'rename-worker',
-            driveItemId: file.driveItemId,
+            driveItemId,
             attempt: i + 1,
             newName: proposal.name
         });
         result = await renameFile({
-            accessToken,
-            driveId: file.driveId,
-            driveItemId: file.driveItemId,
-            newName: proposal.name,
-            dryRun: false,
-            context
+            accessToken, driveId, driveItemId, newName: proposal.name, dryRun: false, context
         });
     }
 
@@ -358,13 +353,11 @@ async function handleQueueMessage(message, context) {
             stack: error.stack
         });
 
-        if (job?.listItemId) {
-            const renameConfig = getRenameConfig();
+        if (job?.driveId && job?.driveItemId) {
             await writeStatus({
                 accessToken: await getAccessToken(context).catch(() => null),
-                sitePath: job.sitePath || renameConfig.sitePath,
-                listId: job.listId || renameConfig.listId,
-                listItemId: job.listItemId,
+                driveId: job.driveId,
+                driveItemId: job.driveItemId,
                 status: RENAME_STATUS.ERROR,
                 detail: error.message,
                 attempts: (Number(job.attempts) || 0) + 1,

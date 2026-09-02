@@ -3,6 +3,11 @@
  * Kept separate from shared/config.js so that adding this feature touches no
  * file on the live notification path.
  *
+ * The scan target is a SharePoint URL — the thing an operator can actually copy
+ * from the address bar — rather than a site path, drive id and drive-relative
+ * folder path, none of which are visible anywhere in SharePoint. The drive is
+ * resolved from the library name at scan time.
+ *
  * Two settings default to the safe value rather than the useful one:
  *   RENAME_ENABLED  defaults false — the sweep does nothing until switched on.
  *   RENAME_DRY_RUN  defaults true  — a missing or misspelled setting cannot
@@ -10,10 +15,11 @@
  */
 
 const { hasPlaceholderRules, placeholderTypes } = require('./document-type-rules');
+const { parseSharePointUrl } = require('./sharepoint-url');
 
 // Cap on how many candidates one sweep enqueues. At ~400 documents/day this is
-// generous; it exists so a misconfigured folder path pointing at a whole library
-// cannot enqueue thousands of downloads in one tick.
+// generous; it exists so a first run against a large library backlog does not
+// enqueue everything at once.
 const DEFAULT_MAX_PER_SWEEP = 500;
 
 function readBoolean(value, fallback) {
@@ -34,14 +40,27 @@ function getRenameConfig() {
         enabled: readBoolean(process.env.RENAME_ENABLED, false),
         // Explicit opt-in required to write. See module header.
         dryRun: readBoolean(process.env.RENAME_DRY_RUN, true),
-        sitePath: process.env.RENAME_SITE_PATH || null,
-        listId: process.env.RENAME_LIST_ID || null,
-        folderPath: process.env.RENAME_FOLDER_PATH || null,
-        driveId: process.env.RENAME_DRIVE_ID || null,
+        libraryUrl: process.env.RENAME_LIBRARY_URL || null,
+        // Subfolders are in scope by default: this library nests by type and
+        // month (CHECK/2026/2026_01), so a non-recursive scan of a sensible
+        // starting point would find nothing at all.
+        recursive: readBoolean(process.env.RENAME_RECURSIVE, true),
         maxPerSweep: Number.isInteger(maxPerSweep) && maxPerSweep > 0
             ? maxPerSweep
             : DEFAULT_MAX_PER_SWEEP
     };
+}
+
+/**
+ * Resolve the configured URL into its Graph parts.
+ * @param {Object} [renameConfig]
+ * @returns {{hostname, siteName, sitePath, libraryName, folderPath, isRoot}|null}
+ */
+function getScanTarget(renameConfig = getRenameConfig()) {
+    if (!renameConfig.libraryUrl) {
+        return null;
+    }
+    return parseSharePointUrl(renameConfig.libraryUrl);
 }
 
 /**
@@ -52,14 +71,18 @@ function getRenameConfig() {
 function validateRenameConfig(renameConfig = getRenameConfig()) {
     const problems = [];
 
-    if (!renameConfig.sitePath) {
-        problems.push('RENAME_SITE_PATH is not set (e.g. "host.sharepoint.com:/sites/Accounting_Research:")');
+    if (!renameConfig.libraryUrl) {
+        problems.push(
+            'RENAME_LIBRARY_URL is not set. Paste the URL of the document library or folder to '
+            + 'scan, e.g. https://contoso.sharepoint.com/sites/Finance/OutputBox/Forms/AllItems.aspx'
+        );
+        return problems;
     }
-    if (!renameConfig.listId) {
-        problems.push('RENAME_LIST_ID is not set (the document library list id, needed to write status columns)');
-    }
-    if (!renameConfig.folderPath && !renameConfig.driveId) {
-        problems.push('RENAME_FOLDER_PATH is not set (the folder to scan, relative to the drive root)');
+
+    try {
+        getScanTarget(renameConfig);
+    } catch (error) {
+        problems.push(`RENAME_LIBRARY_URL could not be parsed: ${error.message}`);
     }
 
     return problems;
@@ -69,7 +92,7 @@ function validateRenameConfig(renameConfig = getRenameConfig()) {
  * Should renames actually be written?
  *
  * Placeholder rule sets force dry-run regardless of RENAME_DRY_RUN. Those
- * patterns are guesses at the real naming convention; letting them rename live
+ * patterns are not yet confirmed by the business; letting them rename live
  * files would be worse than doing nothing.
  *
  * @param {Object} [renameConfig]
@@ -80,7 +103,7 @@ function resolveDryRun(renameConfig = getRenameConfig()) {
         return {
             dryRun: true,
             reason: `Rule sets still marked placeholder: ${placeholderTypes().join(', ')}. `
-                + 'Supply the real naming conventions and set "placeholder": false to enable renaming.'
+                + 'Confirm the naming conventions and set "placeholder": false to enable renaming.'
         };
     }
 
@@ -93,6 +116,7 @@ function resolveDryRun(renameConfig = getRenameConfig()) {
 
 module.exports = {
     getRenameConfig,
+    getScanTarget,
     validateRenameConfig,
     resolveDryRun,
     DEFAULT_MAX_PER_SWEEP

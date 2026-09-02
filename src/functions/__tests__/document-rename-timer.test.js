@@ -8,7 +8,12 @@ jest.mock('../../shared/auth', () => ({
 }));
 
 jest.mock('../../shared/sharepoint-folder-scanner', () => ({
-    listFolderFiles: jest.fn(() => Promise.resolve({ files: [], folderCount: 0, truncated: false }))
+    listFolderFiles: jest.fn(() => Promise.resolve({
+        files: [], folderCount: 0, foldersVisited: 1, truncated: false
+    })),
+    resolveDrive: jest.fn(() => Promise.resolve({
+        id: 'drive-1', name: 'OutputBox', webUrl: 'https://host/sites/X/OutputBox'
+    }))
 }));
 
 jest.mock('../../shared/logger', () => ({
@@ -17,7 +22,7 @@ jest.mock('../../shared/logger', () => ({
     }))
 }));
 
-const { listFolderFiles } = require('../../shared/sharepoint-folder-scanner');
+const { listFolderFiles, resolveDrive } = require('../../shared/sharepoint-folder-scanner');
 const { validateRuleSet } = require('../../shared/document-type-rules');
 const { STATUS_FIELDS, RENAME_STATUS, MAX_ATTEMPTS } = require('../../shared/document-rename-status');
 const {
@@ -56,9 +61,11 @@ function mockContext() {
 }
 
 const RENAME_VARS = [
-    'RENAME_ENABLED', 'RENAME_DRY_RUN', 'RENAME_SITE_PATH',
-    'RENAME_LIST_ID', 'RENAME_FOLDER_PATH', 'RENAME_MAX_PER_SWEEP'
+    'RENAME_ENABLED', 'RENAME_DRY_RUN', 'RENAME_LIBRARY_URL',
+    'RENAME_RECURSIVE', 'RENAME_MAX_PER_SWEEP'
 ];
+const LIBRARY_URL =
+    'https://contoso.sharepoint.com/sites/Finance/OutputBox/Forms/AllItems.aspx';
 
 describe('document-rename-timer', () => {
     let saved;
@@ -67,7 +74,12 @@ describe('document-rename-timer', () => {
         jest.clearAllMocks();
         saved = {};
         RENAME_VARS.forEach((k) => { saved[k] = process.env[k]; delete process.env[k]; });
-        listFolderFiles.mockResolvedValue({ files: [], folderCount: 0, truncated: false });
+        listFolderFiles.mockResolvedValue({
+            files: [], folderCount: 0, foldersVisited: 1, truncated: false
+        });
+        resolveDrive.mockResolvedValue({
+            id: 'drive-1', name: 'OutputBox', webUrl: 'https://host/sites/X/OutputBox'
+        });
     });
 
     afterEach(() => {
@@ -79,9 +91,7 @@ describe('document-rename-timer', () => {
     /** Set a complete, enabled configuration. */
     function configureEnabled() {
         process.env.RENAME_ENABLED = 'true';
-        process.env.RENAME_SITE_PATH = 'host:/sites/X:';
-        process.env.RENAME_LIST_ID = 'list-1';
-        process.env.RENAME_FOLDER_PATH = 'Inbox';
+        process.env.RENAME_LIBRARY_URL = LIBRARY_URL;
     }
 
     describe('evaluateFile', () => {
@@ -218,22 +228,20 @@ describe('document-rename-timer', () => {
     });
 
     describe('buildRenameMessage', () => {
-        it('carries what the worker needs', () => {
+        it('carries what the worker needs, including the folder', () => {
+            // The folder identifies the document type, so it travels with the job.
             const message = JSON.parse(buildRenameMessage({
-                file: file(),
+                file: { ...file(), folderPath: 'CHECK/2026/2026_01' },
                 state: { attempts: 2 },
-                renameConfig: { sitePath: 'host:/sites/X:', listId: 'list-1', folderPath: 'Inbox' },
+                driveId: 'drive-1',
                 enqueuedAt: '2026-09-01T00:00:00Z'
             }));
             expect(message).toMatchObject({
-                driveItemId: 'item-1',
                 driveId: 'drive-1',
-                listItemId: '42',
+                driveItemId: 'item-1',
                 name: 'scan_0417.pdf',
+                folderPath: 'CHECK/2026/2026_01',
                 sha1Hash: 'HASH1',
-                sitePath: 'host:/sites/X:',
-                listId: 'list-1',
-                folderPath: 'Inbox',
                 attempts: 2
             });
         });
@@ -242,7 +250,7 @@ describe('document-rename-timer', () => {
             const message = JSON.parse(buildRenameMessage({
                 file: { ...file(), downloadUrl: 'https://presigned/x' },
                 state: { attempts: 0 },
-                renameConfig: {},
+                driveId: 'drive-1',
                 enqueuedAt: 'now'
             }));
             expect(message).not.toHaveProperty('downloadUrl');
@@ -260,7 +268,8 @@ describe('document-rename-timer', () => {
         it('does nothing and reports problems when misconfigured', async () => {
             process.env.RENAME_ENABLED = 'true';
             const result = await runSweep(mockContext());
-            expect(result.misconfigured).toHaveLength(3);
+            expect(result.misconfigured).toHaveLength(1);
+            expect(result.misconfigured[0]).toMatch(/RENAME_LIBRARY_URL/);
             expect(listFolderFiles).not.toHaveBeenCalled();
         });
 
@@ -269,6 +278,7 @@ describe('document-rename-timer', () => {
             listFolderFiles.mockResolvedValue({
                 files: [file({ driveItemId: 'a' }), file({ driveItemId: 'b' })],
                 folderCount: 0,
+                foldersVisited: 1,
                 truncated: false
             });
 
@@ -293,14 +303,44 @@ describe('document-rename-timer', () => {
             expect(context.extraOutputs.set).not.toHaveBeenCalled();
         });
 
-        it('scans the configured folder', async () => {
+        it('resolves the library named in the URL to a drive', async () => {
+            configureEnabled();
+            await runSweep(mockContext());
+            expect(resolveDrive).toHaveBeenCalledWith(expect.objectContaining({
+                sitePath: 'contoso.sharepoint.com:/sites/Finance:',
+                libraryName: 'OutputBox'
+            }));
+        });
+
+        it('scans that drive recursively from the URL folder', async () => {
             configureEnabled();
             await runSweep(mockContext());
             expect(listFolderFiles).toHaveBeenCalledWith(expect.objectContaining({
-                sitePath: 'host:/sites/X:',
-                folderPath: 'Inbox',
+                driveId: 'drive-1',
+                folderPath: '',
+                recursive: true,
                 accessToken: 'mock-token'
             }));
+        });
+
+        it('starts from the subfolder when the URL names one', async () => {
+            process.env.RENAME_ENABLED = 'true';
+            process.env.RENAME_LIBRARY_URL =
+                'https://contoso.sharepoint.com/sites/Finance/OutputBox/Forms/AllItems.aspx'
+                + '?id=%2Fsites%2FFinance%2FOutputBox%2FCHECK%2F2026';
+            await runSweep(mockContext());
+            expect(listFolderFiles).toHaveBeenCalledWith(
+                expect.objectContaining({ folderPath: 'CHECK/2026' })
+            );
+        });
+
+        it('honours RENAME_RECURSIVE=false', async () => {
+            configureEnabled();
+            process.env.RENAME_RECURSIVE = 'false';
+            await runSweep(mockContext());
+            expect(listFolderFiles).toHaveBeenCalledWith(
+                expect.objectContaining({ recursive: false })
+            );
         });
 
         it('honours the per-sweep cap', async () => {
@@ -309,6 +349,7 @@ describe('document-rename-timer', () => {
             listFolderFiles.mockResolvedValue({
                 files: [file({ driveItemId: 'a' }), file({ driveItemId: 'b' })],
                 folderCount: 0,
+                foldersVisited: 1,
                 truncated: false
             });
 

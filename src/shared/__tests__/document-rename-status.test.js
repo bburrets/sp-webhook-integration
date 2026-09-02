@@ -88,27 +88,28 @@ describe('document-rename-status', () => {
     describe('writeStatus', () => {
         const base = {
             accessToken: 't',
-            sitePath: 'host:/sites/X:',
-            listId: 'list-1',
-            listItemId: '42',
+            driveId: 'drive-1',
+            driveItemId: 'item-1',
             status: RENAME_STATUS.RENAMED
         };
 
-        it('PATCHes the list item fields', async () => {
+        it('PATCHes the list item through the drive item', async () => {
+            // Addressing via the drive means no site path or list id has to be
+            // configured; the scan already knows the drive.
             graphRequest.mockResolvedValue({ data: {} });
             expect(await writeStatus(base)).toBe(true);
 
             const call = graphRequest.mock.calls[0][0];
             expect(call.method).toBe('patch');
-            expect(call.url).toContain('/sites/host:/sites/X:/lists/list-1/items/42');
-            expect(call.data.fields[STATUS_FIELDS.status]).toBe('Renamed');
-            expect(call.data.fields[STATUS_FIELDS.processedAt]).toBeTruthy();
+            expect(call.url).toContain('/drives/drive-1/items/item-1/listItem/fields');
+            expect(call.data[STATUS_FIELDS.status]).toBe('Renamed');
+            expect(call.data[STATUS_FIELDS.processedAt]).toBeTruthy();
         });
 
         it('writes only the optional fields it was given', async () => {
             graphRequest.mockResolvedValue({ data: {} });
             await writeStatus(base);
-            const fields = graphRequest.mock.calls[0][0].data.fields;
+            const fields = graphRequest.mock.calls[0][0].data;
             expect(fields).not.toHaveProperty(STATUS_FIELDS.docType);
             expect(fields).not.toHaveProperty(STATUS_FIELDS.previousName);
         });
@@ -123,7 +124,7 @@ describe('document-rename-status', () => {
                 previousName: 'old.pdf',
                 contentHash: 'HASH'
             });
-            const fields = graphRequest.mock.calls[0][0].data.fields;
+            const fields = graphRequest.mock.calls[0][0].data;
             expect(fields[STATUS_FIELDS.docType]).toBe('GLJE');
             expect(fields[STATUS_FIELDS.detail]).toBe('why');
             expect(fields[STATUS_FIELDS.attempts]).toBe(2);
@@ -134,20 +135,19 @@ describe('document-rename-status', () => {
         it('truncates an over-long detail', async () => {
             graphRequest.mockResolvedValue({ data: {} });
             await writeStatus({ ...base, detail: 'x'.repeat(MAX_DETAIL_LENGTH + 500) });
-            expect(graphRequest.mock.calls[0][0].data.fields[STATUS_FIELDS.detail])
+            expect(graphRequest.mock.calls[0][0].data[STATUS_FIELDS.detail])
                 .toHaveLength(MAX_DETAIL_LENGTH);
         });
 
         it('records attempts of zero rather than dropping the field', async () => {
             graphRequest.mockResolvedValue({ data: {} });
             await writeStatus({ ...base, attempts: 0 });
-            expect(graphRequest.mock.calls[0][0].data.fields[STATUS_FIELDS.attempts]).toBe(0);
+            expect(graphRequest.mock.calls[0][0].data[STATUS_FIELDS.attempts]).toBe(0);
         });
 
         it('returns false without calling Graph when identifiers are missing', async () => {
-            expect(await writeStatus({ ...base, listItemId: null })).toBe(false);
-            expect(await writeStatus({ ...base, listId: null })).toBe(false);
-            expect(await writeStatus({ ...base, sitePath: null })).toBe(false);
+            expect(await writeStatus({ ...base, driveItemId: null })).toBe(false);
+            expect(await writeStatus({ ...base, driveId: null })).toBe(false);
             expect(graphRequest).not.toHaveBeenCalled();
         });
 

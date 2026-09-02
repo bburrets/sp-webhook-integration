@@ -87,7 +87,7 @@ describe('document-type-rules', () => {
             ],
             'a validate regex that does not compile': [{ validate: '^GLJE[' }, /validate is not a valid regex/],
             'a classify block with no signals': [
-                { classify: { filenameHints: [], contentPatterns: [] } }, /at least one filenameHint or contentPattern/
+                { classify: { filenameHints: [], contentPatterns: [] } }, /at least one folderHint, filenameHint or contentPattern/
             ],
             'a content pattern that does not compile': [
                 { classify: { filenameHints: ['x'], contentPatterns: ['(bad'] } }, /contentPatterns\[0\] is not a valid regex/

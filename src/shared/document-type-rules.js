@@ -145,7 +145,12 @@ function validateFields(raw, problems) {
 
 function validateClassify(raw, problems) {
     const classify = raw.classify || {};
+    const folderHints = classify.folderHints === undefined ? [] : classify.folderHints;
     const filenameHints = classify.filenameHints === undefined ? [] : classify.filenameHints;
+
+    if (!Array.isArray(folderHints) || folderHints.some((hint) => typeof hint !== 'string')) {
+        problems.push('classify.folderHints must be an array of strings');
+    }
     const contentPatterns = classify.contentPatterns === undefined ? [] : classify.contentPatterns;
 
     if (!Array.isArray(filenameHints) || filenameHints.some((hint) => typeof hint !== 'string')) {
@@ -165,9 +170,10 @@ function validateClassify(raw, problems) {
         });
     }
 
-    if (Array.isArray(filenameHints) && filenameHints.length === 0
+    if (Array.isArray(folderHints) && folderHints.length === 0
+        && Array.isArray(filenameHints) && filenameHints.length === 0
         && Array.isArray(contentPatterns) && contentPatterns.length === 0) {
-        problems.push('classify must declare at least one filenameHint or contentPattern');
+        problems.push('classify must declare at least one folderHint, filenameHint or contentPattern');
     }
 
     const minMatches = classify.minMatches === undefined ? 1 : classify.minMatches;
@@ -176,6 +182,7 @@ function validateClassify(raw, problems) {
     }
 
     return {
+        folderHints: (Array.isArray(folderHints) ? folderHints : []).map((h) => String(h).toLowerCase()),
         filenameHints: (Array.isArray(filenameHints) ? filenameHints : []).map((h) => String(h).toLowerCase()),
         contentPatterns: Array.isArray(contentPatterns) ? contentPatterns : [],
         contentRegexes,

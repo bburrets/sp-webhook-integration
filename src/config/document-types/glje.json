@@ -7,6 +7,10 @@
         ".pdf"
     ],
     "classify": {
+        "folderHints": [
+            "glje",
+            "gl-je"
+        ],
         "filenameHints": [
             "glje",
             "gl je",

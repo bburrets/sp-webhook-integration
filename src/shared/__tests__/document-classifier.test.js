@@ -161,7 +161,78 @@ describe('document-classifier', () => {
         });
     });
 
+    describe('folder hints', () => {
+        const FOLDERED = validateRuleSet({
+            type: 'CHECK',
+            classify: { folderHints: ['check'], filenameHints: ['chk'], contentPatterns: ['Check\\s*No'] },
+            fields: { n: { pattern: '(\\d+)' } },
+            template: 'CHECK_{n}',
+            validate: '^CHECK_\\d+\\.pdf$'
+        }, 'test');
+
+        it('classifies from the folder with no other signal', () => {
+            const result = classify({
+                fileName: 'scan.pdf', text: '', folderPath: 'CHECK/2026/2026_01', ruleSets: [FOLDERED]
+            });
+            expect(result.type).toBe('CHECK');
+        });
+
+        it('outweighs both content and filename', () => {
+            const byFolder = scoreRuleSet({
+                fileName: 'x.pdf', text: '', folderPath: 'CHECK', ruleSet: FOLDERED
+            });
+            const byContentAndName = scoreRuleSet({
+                fileName: 'chk.pdf', text: 'Check No: 1', folderPath: '', ruleSet: FOLDERED
+            });
+            expect(byFolder.score).toBeGreaterThanOrEqual(byContentAndName.score);
+            expect(byFolder.folderHit).toBe(true);
+        });
+
+        it('matches whole segments only', () => {
+            // A folder called CHECKLIST is not the CHECK folder.
+            expect(scoreRuleSet({
+                fileName: 'x.pdf', text: '', folderPath: 'CHECKLIST/2026', ruleSet: FOLDERED
+            }).folderHit).toBe(false);
+        });
+
+        it('matches at any depth', () => {
+            expect(scoreRuleSet({
+                fileName: 'x.pdf', text: '', folderPath: 'Archive/CHECK/2026', ruleSet: FOLDERED
+            }).folderHit).toBe(true);
+        });
+
+        it('is case-insensitive', () => {
+            expect(scoreRuleSet({
+                fileName: 'x.pdf', text: '', folderPath: 'check/2026', ruleSet: FOLDERED
+            }).folderHit).toBe(true);
+        });
+
+        it('counts multiple folder hints as one signal', () => {
+            const multi = validateRuleSet({
+                type: 'GLJE',
+                classify: { folderHints: ['glje', 'gl-je'] },
+                fields: { n: { pattern: '(\\d+)' } },
+                template: 'GLJE_{n}',
+                validate: '^GLJE_\\d+\\.pdf$'
+            }, 'test');
+            expect(scoreRuleSet({
+                fileName: 'x.pdf', text: '', folderPath: 'glje/gl-je', ruleSet: multi
+            }).signals).toBe(1);
+        });
+
+        it('is absent when no folder is supplied', () => {
+            expect(scoreRuleSet({ fileName: 'x.pdf', text: '', ruleSet: FOLDERED }).folderHit).toBe(false);
+        });
+    });
+
     describe('against the rule sets shipped in this repo', () => {
+        it('classifies each type from its output folder alone', () => {
+            // How the sweep will actually work: OutputBox is organised by type.
+            expect(classify({ fileName: 's.pdf', text: '', folderPath: 'CHECK/2026/2026_01' }).type).toBe('CHECK');
+            expect(classify({ fileName: 's.pdf', text: '', folderPath: 'GLJE/2025_11' }).type).toBe('GLJE');
+            expect(classify({ fileName: 's.pdf', text: '', folderPath: 'WIRE/2025_11' }).type).toBe('WIRE');
+        });
+
         it('classifies each document type from representative text', () => {
             // Texts mirror what the real OCR'd documents contain.
             // COSTING is omitted: it is disabled pending a defined convention.
