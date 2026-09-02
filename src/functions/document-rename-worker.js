@@ -209,6 +209,7 @@ async function handleRenameMessage(message, context) {
         fileName: file.name,
         text: extraction.text,
         folderPath,
+        folderFallback: renameConfig.folderFallback,
         ruleSets
     });
 

@@ -17,7 +17,7 @@ const LIBRARY_URL =
 
 const RENAME_VARS = [
     'RENAME_ENABLED', 'RENAME_DRY_RUN', 'RENAME_LIBRARY_URL',
-    'RENAME_RECURSIVE', 'RENAME_MAX_PER_SWEEP'
+    'RENAME_RECURSIVE', 'RENAME_CLASSIFY_BY_FOLDER', 'RENAME_MAX_PER_SWEEP'
 ];
 
 describe('document-rename-config', () => {
@@ -61,6 +61,14 @@ describe('document-rename-config', () => {
         it('is case-insensitive for booleans', () => {
             process.env.RENAME_ENABLED = 'TRUE';
             expect(getRenameConfig().enabled).toBe(true);
+        });
+
+        it('keeps the folder fallback on unless told otherwise', () => {
+            // Content always classifies first; this only controls whether the
+            // folder is consulted when the document itself is inconclusive.
+            expect(getRenameConfig().folderFallback).toBe(true);
+            process.env.RENAME_CLASSIFY_BY_FOLDER = 'false';
+            expect(getRenameConfig().folderFallback).toBe(false);
         });
 
         it('applies the default per-sweep cap', () => {

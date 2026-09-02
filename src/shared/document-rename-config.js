@@ -45,6 +45,10 @@ function getRenameConfig() {
         // month (CHECK/2026/2026_01), so a non-recursive scan of a sensible
         // starting point would find nothing at all.
         recursive: readBoolean(process.env.RENAME_RECURSIVE, true),
+        // Content always classifies first. This only controls whether the
+        // folder is consulted when the document itself is inconclusive --
+        // usually because OCR salvaged nothing from it.
+        folderFallback: readBoolean(process.env.RENAME_CLASSIFY_BY_FOLDER, true),
         maxPerSweep: Number.isInteger(maxPerSweep) && maxPerSweep > 0
             ? maxPerSweep
             : DEFAULT_MAX_PER_SWEEP

@@ -108,9 +108,14 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
   via `/drives/{driveId}/items/{itemId}/listItem/fields`, so there is no list id to configure either.
   Subfolders are walked by default (`RENAME_RECURSIVE=true`) — pointing at the library root covers
   every type and month and needs no upkeep as new month folders appear.
-- **The folder decides the document type.** `folderHints` is weighted 4, content 2, filename 1, so a
-  file under `CHECK/` is a check regardless of OCR quality or a misleading name. Whole-segment match,
-  so `CHECKLIST` is not `CHECK`.
+- **Content decides the document type; the folder is only a fallback.** A document is classified from
+  its own text first, and the folder is consulted only when that is inconclusive (nothing matched or
+  a tie). Measured 7/7 on verbatim OCR text from real documents
+  (`test/fixtures/ocr-samples.js`, guarded by `document-classification-accuracy.test.js`), including
+  a misfiled document being typed by what it actually is. `RENAME_CLASSIFY_BY_FOLDER=false` disables
+  the fallback entirely. Cost of the fallback: an unrelated file in a type folder is typed rather
+  than declined, then fails extraction as `MissingFields` instead of `Unclassified` — never a wrong
+  rename, just a less precise status.
 - State lives in SharePoint columns on the library (`RenameStatus`, `RenameAttempts`,
   `RenameContentHash`, ...), not Table Storage — the folder listing already expands
   `listItem($expand=fields)`, so it is free. Columns must be created before enabling.

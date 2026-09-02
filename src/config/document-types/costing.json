@@ -17,10 +17,13 @@
             "costsheet"
         ],
         "contentPatterns": [
-            "\\bCommercial\\s+Invoice\\b",
+            "\\bCommercial\\s+[Il]nvoice\\b",
             "\\bINVOICE\\s+NO\\b",
-            "\\bPORT\\s+OF\\s+(?:LOADING|DISCHARGE)\\b",
-            "\\bFOB\\s+PRIC"
+            "P[O0]RT\\s+[O0][fF]\\s+(?:LOADING|DISCHARGE)",
+            "\\bFOB\\s+PRIC",
+            "SAY\\s+(?:TOTAL\\s+)?U\\.?\\s?S\\.?\\s+DOLLAR",
+            "C[O0][UI]N\\w{0,3}[RT]\\w{0,2}\\s+[O0][fF]\\s+[O0]RI",
+            "MAN[UI]\\w{2,6}CT\\w{2,6}\\w?\\s"
         ],
         "minMatches": 1
     },
