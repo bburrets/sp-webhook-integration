@@ -20,6 +20,20 @@ const NOTIFY_URL = 'https://webhook-functions-sharepoint-002.azurewebsites.net/a
 
 // Ground truth captured 2026-08-18 while the system was healthy.
 // Used to verify what we read from the tracking list, not to replace it.
+//
+// !! Accounting_Research WAS DELIBERATELY DISABLED (2026-09-02) !!
+// Its Graph subscription was deleted on purpose, as part of moving document
+// renaming into this middleware (document-rename-timer / -worker). Filing to
+// OutputBox is being handled separately.
+//
+// This script only recreates tracking rows whose Status is 'Active', and the
+// Accounting_Research row is marked 'Deleted', so a normal run will correctly
+// skip it. Do NOT flip that row back to 'Active' to "fix" a recovery run --
+// that would re-enable the FIN_SCAN robot alongside the sweep and have both
+// acting on the same files. Confirm with whoever owns the rename cutover first.
+//
+// The entry below is retained so the row can be restored deliberately if the
+// cutover is ever reversed.
 const EXPECTED = {
     'cf16bc07-2238-4f6b-b76c-4bb21f929987': {
         label: 'Accounting_Research',
