@@ -1,11 +1,18 @@
 {
     "type": "GLJE",
     "placeholder": true,
-    "_note": "Convention DERIVED from Intake_GL-JE/{YYYY_MM}/ (observed: GLJE_06_30_2026_418627.pdf). The G/L Date line extracts cleanly from the OCR text. jeNumber is UNCONFIRMED: the sample filename ends 418627 but the document body shows 'JE-000001', so the trailing number may come from a batch or document id this pattern does not yet capture. Needs one confirmed example before going live.",
+    "_note": "Convention taken from OutputBox/GLJE/{YYYY_MM}/ (e.g. GLJE_11_03_2025_129334.pdf). The G/L Date line extracts cleanly from the OCR text. The trailing 6-digit id is UNCONFIRMED: it is consistently 6 digits across the output folder, but the document body shows 'JE-000001', so it comes from a batch or document id this pattern does not yet locate. Needs one confirmed example before going live.",
     "enabled": true,
-    "extensions": [".pdf"],
+    "extensions": [
+        ".pdf"
+    ],
     "classify": {
-        "filenameHints": ["glje", "gl je", "gl-je", "journal"],
+        "filenameHints": [
+            "glje",
+            "gl je",
+            "gl-je",
+            "journal"
+        ],
         "contentPatterns": [
             "\\bGeneral\\s+Journal\\b",
             "\\bG/L\\s+Date\\b",
@@ -17,14 +24,18 @@
         "glDate": {
             "pattern": "G/L\\s+Date:\\s*(\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{4})",
             "required": true,
-            "transform": ["date:MM_DD_YYYY"]
+            "transform": [
+                "date:MM_DD_YYYY"
+            ]
         },
         "jeNumber": {
             "pattern": "JE[-\\s]*0*(\\d{1,8})",
             "required": true,
-            "transform": ["trim"]
+            "transform": [
+                "trim"
+            ]
         }
     },
     "template": "GLJE_{glDate}_{jeNumber}",
-    "validate": "^GLJE_\\d{2}_\\d{2}_\\d{4}_\\d{1,8}\\.pdf$"
+    "validate": "^GLJE_\\d{2}_\\d{2}_\\d{4}_\\d{6}\\.pdf$"
 }

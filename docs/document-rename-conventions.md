@@ -12,55 +12,68 @@ the worker refuses to rename. See [Confirming the rules](#confirming-the-rules).
 
 ## The library, as it actually is
 
-`Shared Documents` is not one folder. It is four type-specific intake trees with dated subfolders:
+Two libraries matter, and they are different stages of the same process.
+
+**`Shared Documents`** is the intake side — four type trees with dated subfolders,
+holding files *before* renaming:
 
 ```
-Shared Documents/
-├── Intake_Checks/{YYYY}/{YYYY_MM}/       ← extra year level
-├── Intake_GL-JE/{YYYY_MM}/
-├── Intake_Wires/{YYYY_MM}/
-└── Intake_Costing/{YYYY_MM}/  and  /071426/   ← one odd MMDDYY folder
+Shared Documents/Intake_Checks/{YYYY}/{YYYY_MM}/    Intake_GL-JE/{YYYY_MM}/
+                 Intake_Wires/{YYYY_MM}/            Intake_Costing/{YYYY_MM}/
+```
+
+**`OutputBox`** is the authoritative post-rename form — three type folders, no COSTING:
+
+```
+OutputBox/CHECK/{YYYY}/{YYYY_MM}/   OutputBox/GLJE/{YYYY_MM}/   OutputBox/WIRE/{YYYY_MM}/
 ```
 
 Site: `fambrandsllc.sharepoint.com:/sites/Accounting_Research:`
-Drive: `b!MNl2melzSku5UeMBUY9PWOyLv-T4SmhAkW7yOrut5I8c6HMQ6ug8SKyMaAFI2eIV`
+`Shared Documents` drive: `b!MNl2melzSku5UeMBUY9PWOyLv-T4SmhAkW7yOrut5I8c6HMQ6ug8SKyMaAFI2eIV`
+`OutputBox` drive: `b!MNl2melzSku5UeMBUY9PWOyLv-T4SmhAkW7yOrut5I8vpiUbqxDrQYNnAgjCGYgK`
 
-Two consequences:
+**The conventions in this document are the OutputBox ones.** For CHECK and GLJE the two sides agree.
+For WIRE they do not: intake holds `Wire__$18,593.28_02_03_2026.pdf` while OutputBox holds
+`WIRE_251103B02FHR_$237,800.00.pdf` — a completely different shape keyed on the bank reference
+rather than the date.
 
-- **The document type is decided by the folder, not the content.** A file in `Intake_Checks` is a
-  check. That is a far stronger signal than any content pattern, and it is not yet used — the
-  classifier currently works from filename and content only. Adding a `folderHints` signal is the
-  single highest-value improvement available.
-- **The scanner does not recurse.** Pointing it at `Intake_Wires` finds nothing, because the files
-  live in `Intake_Wires/2026_02`. Either configure one leaf folder at a time, or add recursion.
+Two consequences for the sweep:
+
+- **The document type is decided by the folder, not the content.** A file under `CHECK/` is a check.
+  That is a far stronger signal than any content pattern, and it is not yet used — the classifier
+  works from filename and content only. Adding a `folderHints` signal is the highest-value
+  improvement available.
+- **The scanner does not recurse.** Pointing it at `OutputBox/WIRE` finds nothing, because the files
+  live in `OutputBox/WIRE/2025_11`. Either configure one leaf folder at a time, or add recursion.
 
 ### The documents are OCR'd scans, and the OCR is poor
 
 This is the finding that matters most. The PDFs carry a text layer, so the `NoTextLayer` gate does
-**not** catch them — but the text is degraded scan output, not clean digital text. From a real check:
+**not** catch them — but the text is degraded scan output, not clean digital text.
 
-```
-3   8490                    ← check number split by a space
-t  11112026                 ← 1/1/2026, with the slashes read as 1s
-11512026                    ← 1/5/2026, same corruption
-Check:   0000038490         ← this line is clean
-MICHAEL RADOCHAY            ← payee is clean
-5,ooy0'                     ← amount is garbage
-```
+From a real check: `11512026` is `1/5/2026` with the slashes read as `1`s; `3   8490` is the check
+number split by a space; `5,ooy0'` is the amount. But `Check:   0000038490` and the payee
+`MICHAEL RADOCHAY` come through clean.
 
-From a real GL journal: `6t30t2026` (slashes read as `t`), `I\4EDICAL` for `MEDICAL`,
-`'18,440.19` — but `G/L   Date:   6/30/2026` comes through clean.
+From a real GL journal: `6t30t2026` (slashes read as `t`), `I\4EDICAL` for `MEDICAL` — but
+`G/L   Date:   6/30/2026` is clean.
 
-The existing malformed filenames in `Intake_Wires` are the fingerprints of an earlier
-regex-over-bad-OCR attempt: `Wire__$1,254,000.00_U-l I Sl-U-O.pdf`,
-`Wire__$963,164.00_32_12_2026.pdf` (32 is not a month), `Wire__322,43b.88_.pdf`, `Wire___.pdf`.
+From a real wire: the PAR Number `251103B02FHR` reads as `251'103802FH   R` — a stray apostrophe,
+injected spaces, and **`B` misread as `8`**. The amount `$237,800.00` is clean.
 
-**What this means for the design.** Patterns must anchor on the lines that survive OCR (`Check:`,
-`G/L Date:`) rather than the ones that do not (free-floating dates, amounts). The existing guards
-already do the right thing with the rest: an impossible date yields an empty value, a missing field
-becomes `MissingFields`, and a rendered name that fails its own `validate` regex is refused. So a
-bad extraction produces an exception, never a wrong rename — `32_12_2026` would be rejected today.
-The open question is not safety but **hit rate**, and only a dry run can measure it.
+The malformed filenames already in the library are the fingerprints of an earlier
+regex-over-bad-OCR attempt with no validation: `WIRE_251125801YWH_$825,471.00.pdf` and
+`WIRE_2511258020FR_$843,967.08.pdf` (both `B0` → `80`), `Wire__$963,164.00_32_12_2026.pdf` (32 is not
+a month), `CHECK_38509_ Dalya Pop_11_07_2026.pdf` sitting beside the correct
+`Check_38509_DAL YA POP_1_7_2026.pdf`.
+
+**Every one of those is refused by the rules here.** Patterns anchor on the lines that survive OCR
+(`Check:`, `G/L Date:`, `Amount`), and the validate regexes are shaped to reject the known
+corruptions — the WIRE regex requires a literal `B` in position 7, so `251103802FHR` fails and lands
+on the exception path instead of becoming a wrong bank reference. An impossible date yields an empty
+value, a missing field becomes `MissingFields`, and a rendered name that fails its own convention is
+refused. So a bad extraction produces an exception, never a wrong rename. The open question is not
+safety but **hit rate**, and only a dry run can measure it.
 
 ---
 
@@ -214,26 +227,31 @@ decides whether OCR needs revisiting.
 
 ## Confirming the rules
 
-Derived from real filenames on 2026-09-02. Each is still `"placeholder": true` pending confirmation.
+Derived from real OutputBox filenames on 2026-09-02. Each is still `"placeholder": true` pending
+confirmation.
 
 | Type | Convention | Example (real file) | Confidence |
 |---|---|---|---|
-| CHECK | `Check_{checkNumber}_{PAYEE}_{M}_{D}_{YYYY}.pdf` | `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf` | High on shape. Number and payee extract cleanly; **date is the weak field** — OCR mangles it. |
-| WIRE | `Wire__${amount}_{MM}_{DD}_{YYYY}.pdf` (note the **double** underscore) | `Wire__$18,593.28_02_03_2026.pdf` | High on shape. Amount keeps `$`, commas and cents. |
-| GLJE | `GLJE_{MM}_{DD}_{YYYY}_{jeNumber}.pdf` | `GLJE_06_30_2026_418627.pdf` | Shape high; **jeNumber unconfirmed** — the file ends `418627` but the document body reads `JE-000001`, so the trailing number likely comes from a batch or document id not yet located. |
-| COSTING | none | `Costing_01.pdf`, `costing_Image_001.pdf`, `Costing_Image02.pdf` | **No convention exists.** Inconsistent casing and underscores, and a bare sequence number carrying no document data. Shipped `"enabled": false`. |
-
-Note CHECK does **not** zero-pad its date (`1_5_2026`) while WIRE and GLJE do (`02_03_2026`). Both
-forms are supported via the `date:M_D_YYYY` and `date:MM_DD_YYYY` transforms.
+| CHECK | `Check_{number}_{PAYEE}_{M}_{D}_{YYYY}.pdf` | `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf` | **Extracts end to end today.** Note `Check` is title case and the date is **not** zero-padded. |
+| WIRE | `WIRE_{parNumber}_${amount}.pdf` | `WIRE_251103B02FHR_$237,800.00.pdf` | **Extracts end to end today** when OCR is clean. `WIRE` is uppercase, single underscore, no date — the PAR Number encodes it (`251103` = 2025-11-03). Amount keeps `$` and commas. |
+| GLJE | `GLJE_{MM}_{DD}_{YYYY}_{6 digits}.pdf` | `GLJE_11_03_2025_129334.pdf` | **Blocked.** The G/L date extracts cleanly, but the trailing 6-digit id has no known source — the document body shows only `JE-000001`. Renders nothing until that is identified. |
+| COSTING | none | `Costing_01.pdf`, `costing_Image_001.pdf` | **No convention exists**, and OutputBox has no COSTING folder. Ships `"enabled": false`. |
 
 To go live:
 
-1. Confirm the three conventions above, and say where the GLJE trailing number comes from.
-2. Define a COSTING convention, or leave that type disabled.
-3. Set `"placeholder": false` on each confirmed type.
-4. Update the "are all still placeholders" assertion in
+1. Confirm CHECK and WIRE above.
+2. **Say where the GLJE 6-digit id comes from** — this is the one hard blocker.
+3. Define a COSTING convention, or leave that type disabled.
+4. Set `"placeholder": false` on each confirmed type.
+5. Update the "are all still placeholders" assertion in
    `src/shared/__tests__/document-type-rules.test.js`.
-5. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
+6. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
+
+Optional accuracy improvement: the `B` → `8` OCR substitution in wire PAR numbers is systematic and
+positional. A targeted correction would convert a chunk of current `MissingFields` exceptions into
+successful renames. It is deliberately **not** implemented — silently repairing OCR is how the
+existing wrong filenames were produced — but it is a defensible change if the dry run shows the
+exception volume is high.
 
 ## Deployment checklist
 

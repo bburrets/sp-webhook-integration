@@ -1,30 +1,40 @@
 {
     "type": "WIRE",
     "placeholder": true,
-    "_note": "Convention DERIVED from real filenames in Intake_Wires/{YYYY_MM}/. Note the DOUBLE underscore after 'Wire' and that the amount keeps its dollar sign, thousands commas and cents. Many live files are malformed (e.g. 'Wire__$1,375,110.00_.pdf', 'Wire__$963,164.00_32_12_2026.pdf' where 32 is not a month) which is exactly what this sweep is meant to fix.",
+    "_note": "Convention taken from OutputBox/WIRE/{YYYY_MM}/, which is the authoritative post-rename form: WIRE_{parNumber}_${amount}.pdf. This is NOT the form used in Shared Documents/Intake_Wires (Wire__$amount_MM_DD_YYYY) -- that is the pre-rename state. The PAR Number is a U.S. Bank SinglePoint wire reference, YYMMDD + B + 2 digits + 3 alphanumerics. OCR corrupts it systematically: 251103B02FHR reads as \"251'103802FH   R\" (B becomes 8). The validate regex REQUIRES a literal B in position 7, so a corrupted reference fails validation and lands on the exception path rather than producing a confidently wrong name -- the malformed live files WIRE_251125801YWH_... and WIRE_2511258020FR_... are that exact failure leaking through an earlier attempt.",
     "enabled": true,
-    "extensions": [".pdf"],
+    "extensions": [
+        ".pdf"
+    ],
     "classify": {
-        "filenameHints": ["wire"],
+        "filenameHints": [
+            "wire"
+        ],
         "contentPatterns": [
-            "\\bWire\\s+(?:Transfer|Payment|Advice)\\b",
-            "\\bBeneficiary\\b",
-            "\\bFed\\s*Reference\\b"
+            "\\bWire\\s+Transfer\\b",
+            "\\bPAR\\s+Number\\b",
+            "\\bCreditor\\s+(?:Agent\\s+)?Information\\b"
         ],
         "minMatches": 1
     },
     "fields": {
-        "amount": {
-            "pattern": "(?:Amount|Total|USD)[:\\s]*\\$?\\s*([\\d,]+\\.\\d{2})",
+        "parNumber": {
+            "pattern": "PAR\\s+Number\\s+(.+?)\\s+Repeat\\s+Code",
             "required": true,
-            "transform": ["trim"]
+            "transform": [
+                "upper",
+                "alnum"
+            ],
+            "maxLength": 12
         },
-        "valueDate": {
-            "pattern": "\\b(\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{4})\\b",
+        "amount": {
+            "pattern": "Amount\\s+\\$\\s*([\\d,]+\\.\\d{2})",
             "required": true,
-            "transform": ["date:MM_DD_YYYY"]
+            "transform": [
+                "trim"
+            ]
         }
     },
-    "template": "Wire__${amount}_{valueDate}",
-    "validate": "^Wire__\\$[\\d,]+\\.\\d{2}_\\d{2}_\\d{2}_\\d{4}\\.pdf$"
+    "template": "WIRE_{parNumber}_${amount}",
+    "validate": "^WIRE_\\d{6}B\\d{2}[A-Z0-9]{3}_\\$[\\d,]+\\.\\d{2}\\.pdf$"
 }

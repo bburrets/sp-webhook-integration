@@ -6,8 +6,10 @@
  * extraction, classification, field extraction, or name rendering is caught
  * against real bytes rather than a stubbed string.
  *
- * The fixtures are plain text-layer PDFs, deliberately not scans: the scanned
- * path has no text to extract and is covered by the extractor's own suite.
+ * Expected names follow the conventions in OutputBox/{CHECK,GLJE,WIRE}, which
+ * is the authoritative post-rename form. The check and wire fixtures reproduce
+ * genuine filenames observed there. COSTING is absent: OutputBox has no COSTING
+ * folder and no convention exists for it.
  */
 
 const fs = require('fs');
@@ -15,7 +17,7 @@ const path = require('path');
 
 const { extractPdfText, MIN_TEXT_LAYER_CHARS } = require('../document-content-extractor');
 const { classify } = require('../document-classifier');
-const { buildProposedName, isCompliant } = require('../document-naming-engine');
+const { buildProposedName, isCompliant, extractFields } = require('../document-naming-engine');
 const { getRuleSet } = require('../document-type-rules');
 
 const FIXTURES = path.join(__dirname, '..', '..', '..', 'test', 'fixtures', 'documents');
@@ -32,14 +34,9 @@ async function runPipeline(fixture, fileName = 'scan_0417.pdf') {
 }
 
 describe('document pipeline over real PDFs', () => {
-    // Expected names follow the conventions derived from the real files in
-    // Intake_Checks / Intake_Wires / Intake_GL-JE. The check and wire fixtures
-    // reproduce genuine filenames observed in the library.
-    // COSTING is absent: it is disabled until the business defines a convention.
     const expected = {
         check: 'Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf',
-        glje: 'GLJE_06_30_2026_1.pdf',
-        wire: 'Wire__$18,593.28_02_03_2026.pdf'
+        wire: 'WIRE_251103B02FHR_$237,800.00.pdf'
     };
 
     describe.each(Object.keys(expected))('%s.pdf', (fixture) => {
@@ -67,10 +64,54 @@ describe('document pipeline over real PDFs', () => {
         });
 
         it('is left alone once already correctly named', async () => {
-            // The second sweep must treat the renamed file as finished.
             const { classification } = await runPipeline(fixture, expected[fixture]);
             expect(isCompliant(expected[fixture], getRuleSet(fixture.toUpperCase()))).toBe(true);
             expect(classification.type).toBe(fixture.toUpperCase());
+        });
+    });
+
+    describe('glje.pdf', () => {
+        it('classifies correctly', async () => {
+            expect((await runPipeline('glje')).classification.type).toBe('GLJE');
+        });
+
+        it('extracts the G/L date, which survives OCR cleanly', async () => {
+            const { classification, text } = await runPipeline('glje');
+            expect(extractFields(text, classification.ruleSet).values.glDate).toBe('06_30_2026');
+        });
+
+        it('refuses to rename, because the 6-digit id source is unconfirmed', async () => {
+            // OutputBox names end in a consistent 6-digit id (GLJE_11_03_2025_129334)
+            // but the document body only shows JE-000001. Until that source is
+            // identified the rendered name fails its own convention, so the file
+            // lands on the exception path rather than being renamed wrongly.
+            const { proposal } = await runPipeline('glje');
+            expect(proposal.ok).toBe(false);
+            expect(proposal.reason).toMatch(/does not satisfy the convention for GLJE/);
+        });
+    });
+
+    describe('OCR corruption', () => {
+        it('refuses a wire whose PAR number OCR mangled', () => {
+            // 251103B02FHR reads as "251'103802FH   R" -- the B becomes an 8. The
+            // validate regex requires a literal B in position 7, so this is refused
+            // rather than renamed to a confidently wrong bank reference. The live
+            // files WIRE_251125801YWH_... are that failure leaking through an
+            // earlier attempt that had no such guard.
+            const result = buildProposedName({
+                fileName: 'x.pdf',
+                text: "PAR Number 251'103802FH   R  Repeat Code Nickname\nAmount $237,800.00\n",
+                ruleSet: getRuleSet('WIRE')
+            });
+            expect(result.ok).toBe(false);
+        });
+
+        it('still extracts the amount, which survives OCR cleanly', () => {
+            const { values } = extractFields(
+                "PAR Number 251'103802FH   R  Repeat Code\nAmount $237,800.00\n",
+                getRuleSet('WIRE')
+            );
+            expect(values.amount).toBe('237,800.00');
         });
     });
 
@@ -82,13 +123,12 @@ describe('document pipeline over real PDFs', () => {
 
     it('ignores the incoming filename when content is decisive', async () => {
         // A wire misnamed as a check must still classify as a wire.
-        const { classification } = await runPipeline('wire', 'check_scan_0001.pdf');
-        expect(classification.type).toBe('WIRE');
+        expect((await runPipeline('wire', 'check_scan_0001.pdf')).classification.type).toBe('WIRE');
     });
 
     it('produces the same name regardless of the original filename', async () => {
-        const a = await runPipeline('glje', 'scan_0417.pdf');
-        const b = await runPipeline('glje', 'totally_different_name.pdf');
+        const a = await runPipeline('check', 'scan_0417.pdf');
+        const b = await runPipeline('check', 'totally_different_name.pdf');
         expect(a.proposal.name).toBe(b.proposal.name);
     });
 });

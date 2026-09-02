@@ -73,29 +73,31 @@ document-rename-timer (0 30 * * * *) --enqueue--> [document-rename] --> document
   no file I/O, no writes                                               classify -> rename via Graph
 ```
 
+**Two libraries, two stages.** `Shared Documents/Intake_{Checks,Wires,GL-JE,Costing}` is the
+pre-rename intake; **`OutputBox/{CHECK,GLJE,WIRE}` is the authoritative post-rename form** and is
+where the conventions come from. Both use dated subfolders. OutputBox has no COSTING.
+For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
+`WIRE_251103B02FHR_$237,800.00.pdf` (keyed on the U.S. Bank PAR Number, not a date).
+
 - Rules live in `src/config/document-types/{check,costing,glje,wire}.json`, validated at load time.
-  Conventions were derived from the real library on 2026-09-02 (e.g.
-  `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf`, `Wire__$18,593.28_02_03_2026.pdf`). COSTING has no
-  convention at all and ships `enabled: false`.
+  CHECK and WIRE extract end to end today. **GLJE is blocked**: its trailing 6-digit id has no known
+  source (the document body shows only `JE-000001`). COSTING has no convention and is disabled.
 - **All rule sets are `"placeholder": true` pending business confirmation.** While any is, the
   worker refuses to rename no matter what `RENAME_DRY_RUN` says.
 - **The documents are OCR'd scans with degraded text** — they DO have a text layer, so the
-  NoTextLayer gate does not catch them, but dates and amounts are frequently corrupted
-  (`1/5/2026` → `11512026`, `6/30/2026` → `6t30t2026`). Anchor patterns on lines that survive
-  (`Check:`, `G/L Date:`). Bad extractions fail safe to the exception path; the open question is
-  hit rate, which only a dry run can measure.
-- **`Shared Documents` is four intake trees with dated subfolders**
-  (`Intake_Checks/{YYYY}/{YYYY_MM}`, `Intake_Wires/{YYYY_MM}`, `Intake_GL-JE/{YYYY_MM}`,
-  `Intake_Costing`). The scanner does NOT recurse, and folder-based classification is not yet
-  implemented though the folder is the strongest type signal available.
-- `RENAME_ENABLED` defaults **false**, `RENAME_DRY_RUN` defaults **true**. A missing setting cannot
-  cause a live rename.
-- Scanned PDFs have no text layer, so they are recorded `NoTextLayer` and never renamed. No OCR.
+  NoTextLayer gate does not catch them. `1/5/2026` reads as `11512026`, `6/30/2026` as `6t30t2026`,
+  and wire PAR numbers lose their `B` to an `8` (`251103B02FHR` → `251'103802FH   R`). Anchor
+  patterns on the lines that survive (`Check:`, `G/L Date:`, `Amount`), and shape validate regexes
+  to reject the known corruptions — the WIRE regex requires a literal `B` in position 7, which is
+  why `WIRE_251125801YWH_...` (already in the library from an earlier attempt) is refused.
+  Bad extractions fail safe to the exception path; hit rate is the open question a dry run measures.
+- **The scanner does NOT recurse**, and folder-based classification is not implemented even though
+  the folder decides the type outright — the highest-value improvement left.
 - State lives in SharePoint columns on the library (`RenameStatus`, `RenameAttempts`,
   `RenameContentHash`, ...), not Table Storage — the folder listing already expands
   `listItem($expand=fields)`, so it is free. Columns must be created before enabling.
-- Renaming re-triggers the library's live webhook. **Confirm the folder is not in the same library as
-  the Accounting_Research webhook, or retire that webhook, before going live.**
+- Renaming re-triggers the library's live webhook. **Confirm the target folder is not in a library
+  watched by the Accounting_Research webhook, or retire that webhook, before going live.**
 - Graph write permission (`Sites.ReadWrite.All`) is **unverified** — see the checklist in the doc.
 
 Full reference: `docs/document-rename-conventions.md`

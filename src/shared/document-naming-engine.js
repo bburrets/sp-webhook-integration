@@ -29,6 +29,8 @@ const MAX_FILENAME_LENGTH = 200;
 // transforms (date:M_D_YYYY) legitimately emit it, and the per-type validate
 // regex already rejects any value that breaks the expected shape.
 const FILENAME_ILLEGAL = /["*:<>?/\\|]+/g;
+// eslint-disable-next-line no-control-regex -- matching control characters is
+// the point: OCR output can carry them and they must never reach a filename.
 const CONTROL_CHARS = /[\x00-\x1f\x7f]+/g;
 
 /**

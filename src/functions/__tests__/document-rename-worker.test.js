@@ -55,11 +55,14 @@ const {
     DETERMINISTIC_STATUSES
 } = require('../document-rename-worker');
 
-// Mirrors the real OCR'd GL journal documents: the G/L Date line comes through
-// cleanly, which is what the glDate pattern anchors on.
-const GLJE_TEXT = 'General Journal FAM, LLC (FAM)\nJE-000001 Source Journal Posted\n'
-    + 'Account Number Description Debit Credit\nReport Totals: 214,815.93\n'
-    + 'Run Date: 7/1/2026 G/L Date: 6/30/2026\n';
+// Mirrors a real OCR'd check remittance. CHECK is used for the happy path
+// because it is the one type that extracts end to end today: GLJE's trailing
+// 6-digit id has no confirmed source, so it deliberately fails to render.
+const CHECK_TEXT = 'Date Invoice No Comment Amount Discount Net Amount\n'
+    + '1/1/2026 MR 010126 FAM MR 010126 5,000.00 0.00 5,000.00\n'
+    + 'Check: 0000038490\n'
+    + '1/5/2026 MICHAEL RADOCHAY Check Total 5,000.00\n';
+const EXPECTED_NAME = 'Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf';
 
 function job(overrides = {}) {
     return {
@@ -105,13 +108,13 @@ describe('document-rename-worker', () => {
         resetFolderCache();
         getFileById.mockResolvedValue(scannedFile());
         extractDocumentText.mockResolvedValue({
-            text: GLJE_TEXT, hasTextLayer: true, charCount: GLJE_TEXT.length,
+            text: CHECK_TEXT, hasTextLayer: true, charCount: CHECK_TEXT.length,
             pageCount: 1, byteLength: 2048, unsupported: false
         });
         checkCollision.mockReturnValue({ collides: false, conflictingFile: null });
         renameFile.mockResolvedValue({
             renamed: true, dryRun: false, collision: false,
-            newName: 'GLJE_06_30_2026_1.pdf', error: null
+            newName: EXPECTED_NAME, error: null
         });
         resolveDryRun.mockReturnValue({ dryRun: false, reason: null });
         writeStatus.mockResolvedValue(true);
@@ -138,11 +141,11 @@ describe('document-rename-worker', () => {
             expect(result.status).toBe(RENAME_STATUS.RENAMED);
             expect(renameFile).toHaveBeenCalledWith(expect.objectContaining({
                 driveId: 'drive-1', driveItemId: 'item-1',
-                newName: 'GLJE_06_30_2026_1.pdf', dryRun: false
+                newName: EXPECTED_NAME, dryRun: false
             }));
             expect(recorded()).toMatchObject({
                 status: RENAME_STATUS.RENAMED,
-                docType: 'GLJE',
+                docType: 'CHECK',
                 previousName: 'scan_0417.pdf',
                 contentHash: 'HASH1'
             });
@@ -177,7 +180,7 @@ describe('document-rename-worker', () => {
         });
 
         it('stops when the name became compliant since the sweep', async () => {
-            getFileById.mockResolvedValue(scannedFile({ name: 'GLJE_06_30_2026_1.pdf' }));
+            getFileById.mockResolvedValue(scannedFile({ name: EXPECTED_NAME }));
             const result = await handleRenameMessage(job(), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.ALREADY_COMPLIANT);
@@ -240,8 +243,8 @@ describe('document-rename-worker', () => {
         it('records NameCollision when Graph rejects the rename', async () => {
             renameFile.mockResolvedValue({
                 renamed: false, dryRun: false, collision: true,
-                newName: 'GLJE_06_30_2026_1.pdf',
-                error: 'A file named "GLJE_06_30_2026_1.pdf" already exists in the folder'
+                newName: EXPECTED_NAME,
+                error: `A file named "${EXPECTED_NAME}" already exists in the folder`
             });
             const result = await handleRenameMessage(job({ attempts: 1 }), mockContext());
 
@@ -269,8 +272,8 @@ describe('document-rename-worker', () => {
 
             expect(result.status).toBe(RENAME_STATUS.DRY_RUN);
             expect(renameFile).not.toHaveBeenCalled();
-            expect(recorded().detail).toMatch(/Would rename to "GLJE_06_30_2026_1\.pdf"/);
-            expect(recorded().docType).toBe('GLJE');
+            expect(recorded().detail).toContain(`Would rename to "${EXPECTED_NAME}"`);
+            expect(recorded().docType).toBe('CHECK');
         });
 
         it('leaves the attempt counter alone so dry sweeps cannot exhaust files', async () => {
