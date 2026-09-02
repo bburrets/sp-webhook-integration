@@ -118,7 +118,11 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
   rename, just a less precise status.
 - State lives in SharePoint columns on the library (`RenameStatus`, `RenameAttempts`,
   `RenameContentHash`, ...), not Table Storage — the folder listing already expands
-  `listItem($expand=fields)`, so it is free. Columns must be created before enabling.
+  `listItem($expand=fields)`, so it is free. Seven columns must be created before enabling; the spec
+  is in `docs/document-rename-conventions.md`. **Every one must have an EMPTY default** — the timer
+  reads `RenameStatus`/`RenameAttempts` to decide what to skip, so a default of `Renamed` or an
+  attempts default of 3 would make the sweep skip every file. Create names with no spaces or the
+  internal name becomes `Rename_x0020_Status` and writes fail.
 - **`Shared Documents` IS the library the live Accounting_Research webhook watches.** Every rename
   (and every status-column write, including in dry run) bumps the item and fires a notification →
   `FIN_SCAN_Rename_And_Storage` queue item → the same robot this feature replaces. No code change

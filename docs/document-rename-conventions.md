@@ -293,25 +293,46 @@ on stray files.
 
 ## SharePoint columns
 
-Add these to the document library. Create them **without spaces** so the internal names match the
-display names and no `_x0020_` encoding is involved.
+Add these seven columns to the target document library before enabling the sweep. The code writes
+them through `/drives/{driveId}/items/{itemId}/listItem/fields`, so the **internal** name must match
+exactly.
 
-| Column | Type | Notes |
+| Column name | Type | Settings |
 |---|---|---|
-| `DocTypeDetected` | Single line of text | CHECK / COSTING / GLJE / WIRE |
-| `RenameStatus` | Choice | Values below |
-| `RenameDetail` | Multiple lines of text | Missing fields, colliding name, proposed name in dry run |
-| `RenameAttempts` | Number | Drives the give-up logic |
-| `RenameProcessedAt` | Date and Time | Last evaluation |
-| `RenamePreviousName` | Single line of text | Audit trail |
-| `RenameContentHash` | Single line of text | SHA1; a change re-arms an exhausted file |
+| `DocTypeDetected` | Single line of text | — |
+| `RenameStatus` | Choice | The ten values below; tick **Allow custom values** |
+| `RenameDetail` | Multiple lines of text | **Plain text** (not enhanced rich text), 6 lines |
+| `RenameAttempts` | Number | 0 decimal places |
+| `RenameProcessedAt` | Date and Time | Include time |
+| `RenamePreviousName` | Single line of text | — |
+| `RenameContentHash` | Single line of text | — |
 
-`RenameStatus` choices: `Renamed`, `AlreadyCompliant`, `NoTextLayer`, `Unclassified`,
-`MissingFields`, `NameCollision`, `UnsupportedType`, `DryRun`, `Error`, `PermanentlyFailed`.
+`RenameStatus` values:
 
-State lives in these columns rather than Table Storage: the folder listing already expands
-`listItem($expand=fields)`, so the state arrives with the listing at no extra cost and is visible to
-the accounting team in the library view.
+```
+Renamed            AlreadyCompliant   NoTextLayer      Unclassified    MissingFields
+NameCollision      UnsupportedType    DryRun           Error           PermanentlyFailed
+```
+
+### Three settings that matter
+
+**Create the names with no spaces.** SharePoint derives the internal name from the display name at
+creation time, so `Rename Status` becomes `Rename_x0020_Status` and every write fails. Type the names
+exactly as above. Renaming the display name afterwards is safe — the internal name is fixed at
+creation.
+
+**Leave every column's default value EMPTY.** This is a correctness requirement, not tidiness. The
+timer reads `RenameStatus` and `RenameAttempts` to decide what to skip: a default of `Renamed` would
+make every file look finished and the sweep would process nothing, and a default `RenameAttempts` of
+3 would make every file look exhausted. Do not mark any column required either — files start with
+these blank by design.
+
+**`RenameDetail` must be plain text.** The enhanced-rich-text option wraps content in HTML, and this
+field is written as a plain string capped at 900 characters.
+
+**Allow custom values on `RenameStatus`.** The ten values above are everything the code writes today,
+but a Choice column rejects anything unlisted, which would fail the status write and lose the record
+of what happened. Allowing custom values makes a future status addition a non-event.
 
 ### Give-up behaviour
 
