@@ -26,7 +26,7 @@ const { app, output } = require('@azure/functions');
 const { getAccessToken } = require('../shared/auth');
 const { createLogger } = require('../shared/logger');
 const { listFolderFiles, resolveDrive } = require('../shared/sharepoint-folder-scanner');
-const { getRuleSets } = require('../shared/document-type-rules');
+const { getRuleSets, getDisabledTypeFolders } = require('../shared/document-type-rules');
 const { isCompliant, getExtension } = require('../shared/document-naming-engine');
 const { readState, isExhausted, isTerminal } = require('../shared/document-rename-status');
 const {
@@ -48,11 +48,24 @@ const renameQueueOutput = output.storageQueue({
  * @param {Object} params
  * @param {Object} params.file - Normalised file from the scanner
  * @param {Object[]} params.ruleSets
+ * @param {Array<{type: string, hints: string[]}>} [params.disabledFolders]
  * @returns {{candidate: boolean, reason: string, state: Object}}
  */
-function evaluateFile({ file, ruleSets }) {
+function evaluateFile({ file, ruleSets, disabledFolders = [] }) {
     const state = readState(file.fields);
     const extension = getExtension(file.name);
+
+    // A file sitting in a switched-off type's folder can never be processed, so
+    // skip it here rather than downloading and parsing it to discover that.
+    const segments = String(file.folderPath || '')
+        .split('/')
+        .filter(Boolean)
+        .map((segment) => segment.toLowerCase());
+    const disabled = disabledFolders.find((entry) =>
+        entry.hints.some((hint) => segments.includes(hint)));
+    if (disabled) {
+        return { candidate: false, reason: `type-disabled:${disabled.type}`, state };
+    }
 
     // Only PDFs are in scope. Skipped silently — writing a status for every
     // stray .xlsx on every sweep would be pure noise.
@@ -89,16 +102,18 @@ function evaluateFile({ file, ruleSets }) {
  * @param {Object} params
  * @param {Object[]} params.files
  * @param {Object[]} [params.ruleSets]
+ * @param {Array<{type: string, hints: string[]}>} [params.disabledFolders]
  * @param {number} [params.maxPerSweep]
  * @returns {{candidates: Object[], skipped: Object, deferred: number}}
  */
-function selectCandidates({ files, ruleSets, maxPerSweep = Infinity }) {
+function selectCandidates({ files, ruleSets, disabledFolders, maxPerSweep = Infinity }) {
     const sets = ruleSets || getRuleSets();
+    const disabled = disabledFolders || getDisabledTypeFolders();
     const skipped = {};
     const candidates = [];
 
     for (const file of files) {
-        const verdict = evaluateFile({ file, ruleSets: sets });
+        const verdict = evaluateFile({ file, ruleSets: sets, disabledFolders: disabled });
         if (verdict.candidate) {
             candidates.push({ file, state: verdict.state });
         } else {

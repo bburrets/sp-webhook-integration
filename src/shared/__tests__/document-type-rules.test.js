@@ -11,6 +11,7 @@ const {
     hasPlaceholderRules,
     placeholderTypes,
     hasGeneratedFields,
+    getDisabledTypeFolders,
     resetRuleSetCache
 } = require('../document-type-rules');
 
@@ -277,10 +278,11 @@ describe('document-type-rules', () => {
             }
         });
 
-        it('are all still placeholders pending the real conventions', () => {
-            // This test is expected to be updated when real rules land.
-            expect(hasPlaceholderRules()).toBe(true);
-            expect(placeholderTypes().sort()).toEqual(['CHECK', 'GLJE', 'WIRE']);
+        it('are all confirmed, so the placeholder interlock is lifted', () => {
+            // Confirmed by the business 2026-09-02. RENAME_DRY_RUN is now the
+            // only thing standing between the sweep and a live rename.
+            expect(hasPlaceholderRules()).toBe(false);
+            expect(placeholderTypes()).toEqual([]);
         });
     });
 
@@ -353,6 +355,21 @@ describe('document-type-rules', () => {
             expect(withVendorLabel.values.invoiceNumber).toBe('100456');
             // Truncated: the pattern stops at the double space inside "LAYLO   LLC".
             expect(withVendorLabel.values.vendorName).toBe('LAYLO');
+        });
+    });
+
+    describe('getDisabledTypeFolders', () => {
+        it('reports the folder hints of switched-off types', () => {
+            expect(getDisabledTypeFolders()).toEqual([
+                { type: 'COSTING', hints: ['costing', 'intake_costing'] }
+            ]);
+        });
+
+        it('excludes types that are enabled', () => {
+            const types = getDisabledTypeFolders().map((entry) => entry.type);
+            expect(types).not.toContain('CHECK');
+            expect(types).not.toContain('WIRE');
+            expect(types).not.toContain('GLJE');
         });
     });
 

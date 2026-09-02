@@ -11,7 +11,7 @@
     "RENAME_ENABLED": "false",
     "RENAME_DRY_RUN": "true",
     "RENAME_MAX_PER_SWEEP": "500",
-    "RENAME_LIBRARY_URL": "https://fambrandsllc.sharepoint.com/sites/Accounting_Research/OutputBox/Forms/AllItems.aspx",
+    "RENAME_LIBRARY_URL": "https://fambrandsllc.sharepoint.com/sites/Accounting_Research/Shared%20Documents/Forms/AllItems.aspx",
     "RENAME_RECURSIVE": "true"
   }
 }

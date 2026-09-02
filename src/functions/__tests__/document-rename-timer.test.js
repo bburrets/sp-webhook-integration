@@ -167,6 +167,26 @@ describe('document-rename-timer', () => {
             expect(verdict.candidate).toBe(true);
         });
 
+        it('skips a folder belonging to a switched-off type without downloading', () => {
+            // COSTING is disabled, so nothing under Intake_Costing can be
+            // processed. Discovering that by parsing every file would be waste.
+            const verdict = evaluateFile({
+                file: file({ name: 'costing_Image_001.pdf', folderPath: 'Intake_Costing/2026_08' }),
+                ruleSets: RULE_SETS,
+                disabledFolders: [{ type: 'COSTING', hints: ['costing', 'intake_costing'] }]
+            });
+            expect(verdict).toMatchObject({ candidate: false, reason: 'type-disabled:COSTING' });
+        });
+
+        it('still processes folders of enabled types', () => {
+            const verdict = evaluateFile({
+                file: file({ folderPath: 'Intake_Wires/2026_02' }),
+                ruleSets: RULE_SETS,
+                disabledFolders: [{ type: 'COSTING', hints: ['intake_costing'] }]
+            });
+            expect(verdict.candidate).toBe(true);
+        });
+
         it('re-selects a file whose last outcome was recoverable', () => {
             const verdict = evaluateFile({
                 file: file({
@@ -358,10 +378,18 @@ describe('document-rename-timer', () => {
             expect(result.deferred).toBe(1);
         });
 
-        it('reports dry run, which placeholder rules force on', async () => {
+        it('reports dry run when RENAME_DRY_RUN is on', async () => {
+            configureEnabled();
+            process.env.RENAME_DRY_RUN = 'true';
+            expect((await runSweep(mockContext())).dryRun).toBe(true);
+        });
+
+        it('reports live once dry run is switched off', async () => {
+            // The conventions are confirmed, so the placeholder interlock no
+            // longer forces dry run. RENAME_DRY_RUN is the only guard left.
             configureEnabled();
             process.env.RENAME_DRY_RUN = 'false';
-            expect((await runSweep(mockContext())).dryRun).toBe(true);
+            expect((await runSweep(mockContext())).dryRun).toBe(false);
         });
 
         it('propagates a scan failure so the invocation is recorded as failed', async () => {

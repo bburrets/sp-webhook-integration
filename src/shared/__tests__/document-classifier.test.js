@@ -226,11 +226,23 @@ describe('document-classifier', () => {
     });
 
     describe('against the rule sets shipped in this repo', () => {
-        it('classifies each type from its output folder alone', () => {
-            // How the sweep will actually work: OutputBox is organised by type.
+        it('classifies each type from its OutputBox folder alone', () => {
             expect(classify({ fileName: 's.pdf', text: '', folderPath: 'CHECK/2026/2026_01' }).type).toBe('CHECK');
             expect(classify({ fileName: 's.pdf', text: '', folderPath: 'GLJE/2025_11' }).type).toBe('GLJE');
             expect(classify({ fileName: 's.pdf', text: '', folderPath: 'WIRE/2025_11' }).type).toBe('WIRE');
+        });
+
+        it('classifies each type from its INTAKE folder alone', () => {
+            // Shared Documents is the configured target, and its folders are
+            // named differently from OutputBox's, so both sets of hints ship.
+            expect(classify({ fileName: 's.pdf', text: '', folderPath: 'Intake_Checks/2026/2026_01' }).type).toBe('CHECK');
+            expect(classify({ fileName: 's.pdf', text: '', folderPath: 'Intake_Wires/2026_02' }).type).toBe('WIRE');
+            expect(classify({ fileName: 's.pdf', text: '', folderPath: 'Intake_GL-JE/2026_06' }).type).toBe('GLJE');
+        });
+
+        it('does not classify Intake_Costing, since COSTING is disabled', () => {
+            expect(classify({ fileName: 'costing_Image_001.pdf', text: '', folderPath: 'Intake_Costing/2026_08' }).type)
+                .toBeNull();
         });
 
         it('classifies each document type from representative text', () => {

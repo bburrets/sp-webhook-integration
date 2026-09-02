@@ -1,14 +1,15 @@
 {
     "type": "CHECK",
-    "placeholder": true,
-    "_note": "Convention confirmed against OutputBox/CHECK/{YYYY}/{YYYY_MM}/, which matches the form already used in Intake_Checks. Note 'Check' is title case and the date is NOT zero-padded (1_5_2026). The output folder also contains bad duplicates from an earlier attempt -- 'CHECK_38509_ Dalya Pop_11_07_2026.pdf' (uppercase type, leading space, mixed-case payee, wrong month) beside the correct 'Check_38509_DAL YA POP_1_7_2026.pdf' -- and the validate regex rejects those. checkNumber and payee extract cleanly from the OCR text; checkDate is the weak field, since OCR renders slashes as digits (1/5/2026 -> 11512026).",
+    "placeholder": false,
+    "_note": "Convention CONFIRMED by the business 2026-09-02, against OutputBox/CHECK/{YYYY}/{YYYY_MM}/, which matches the form already used in Intake_Checks. Note 'Check' is title case and the date is NOT zero-padded (1_5_2026). The output folder also contains bad duplicates from an earlier attempt -- 'CHECK_38509_ Dalya Pop_11_07_2026.pdf' (uppercase type, leading space, mixed-case payee, wrong month) beside the correct 'Check_38509_DAL YA POP_1_7_2026.pdf' -- and the validate regex rejects those. checkNumber and payee extract cleanly from the OCR text; checkDate is the weak field, since OCR renders slashes as digits (1/5/2026 -> 11512026).",
     "enabled": true,
     "extensions": [
         ".pdf"
     ],
     "classify": {
         "folderHints": [
-            "check"
+            "check",
+            "intake_checks"
         ],
         "filenameHints": [
             "check",

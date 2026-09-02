@@ -1,7 +1,7 @@
 {
     "type": "GLJE",
-    "placeholder": true,
-    "_note": "Convention taken from OutputBox/GLJE/{YYYY_MM}/ (e.g. GLJE_11_03_2025_129334.pdf). The G/L Date line extracts cleanly from the OCR text. The trailing 6-digit id is RANDOMLY GENERATED at rename time -- it appears nowhere in the document. That means a dry run's proposed GLJE name will not equal the name a later live run produces; check the shape, not the exact value. A collision on this value is bad luck rather than a duplicate document, so the worker regenerates instead of raising an exception.",
+    "placeholder": false,
+    "_note": "Convention CONFIRMED by the business 2026-09-02, taken from OutputBox/GLJE/{YYYY_MM}/ (e.g. GLJE_11_03_2025_129334.pdf). The G/L Date line extracts cleanly from the OCR text. The trailing 6-digit id is RANDOMLY GENERATED at rename time -- it appears nowhere in the document. That means a dry run's proposed GLJE name will not equal the name a later live run produces; check the shape, not the exact value. A collision on this value is bad luck rather than a duplicate document, so the worker regenerates instead of raising an exception.",
     "enabled": true,
     "extensions": [
         ".pdf"
@@ -9,7 +9,8 @@
     "classify": {
         "folderHints": [
             "glje",
-            "gl-je"
+            "gl-je",
+            "intake_gl-je"
         ],
         "filenameHints": [
             "glje",

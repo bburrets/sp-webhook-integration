@@ -283,6 +283,7 @@ function loadRuleSets(options = {}) {
     }
 
     const ruleSets = [];
+    const allRuleSets = [];
     const seenTypes = new Set();
 
     for (const file of files) {
@@ -301,6 +302,7 @@ function loadRuleSets(options = {}) {
         }
         seenTypes.add(ruleSet.type);
 
+        allRuleSets.push(ruleSet);
         if (ruleSet.enabled) {
             ruleSets.push(ruleSet);
         }
@@ -310,7 +312,7 @@ function loadRuleSets(options = {}) {
         throw new Error(`Every document type rule set in ${dir} is disabled`);
     }
 
-    return ruleSets;
+    return options.includeDisabled ? allRuleSets : ruleSets;
 }
 
 /**
@@ -362,6 +364,22 @@ function placeholderTypes(options = {}) {
 }
 
 /**
+ * Folder hints belonging to document types that are switched off.
+ *
+ * The sweep uses these to skip a whole folder tree without downloading
+ * anything: a file under Intake_Costing cannot be processed while COSTING is
+ * disabled, and finding that out by parsing every file would be pure waste.
+ *
+ * @param {Object} [options]
+ * @returns {Array<{type: string, hints: string[]}>}
+ */
+function getDisabledTypeFolders(options = {}) {
+    return loadRuleSets({ ...options, includeDisabled: true })
+        .filter((ruleSet) => !ruleSet.enabled)
+        .map((ruleSet) => ({ type: ruleSet.type, hints: ruleSet.classify.folderHints }));
+}
+
+/**
  * Does this rule set mint any value at rename time?
  *
  * The worker uses this to decide what a name collision means: on a generated
@@ -389,6 +407,7 @@ module.exports = {
     hasPlaceholderRules,
     placeholderTypes,
     hasGeneratedFields,
+    getDisabledTypeFolders,
     resetRuleSetCache,
     DEFAULT_RULES_DIR
 };

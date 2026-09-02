@@ -90,8 +90,12 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
   the value. A collision on it is bad luck, so the worker re-mints and retries; a collision on an
   extracted value stays an exception. Idempotency holds because compliance is checked before any
   value is minted.
-- **All rule sets are `"placeholder": true` pending business confirmation.** While any is, the
-  worker refuses to rename no matter what `RENAME_DRY_RUN` says.
+- **CHECK, WIRE and GLJE were confirmed by the business 2026-09-02** and are no longer marked
+  placeholder, so `RENAME_DRY_RUN` (default true) is the only guard left. COSTING stays disabled.
+- **Configured target is `Shared Documents`** (the intake side), scanned recursively. Folder hints
+  cover both libraries: `CHECK`/`Intake_Checks`, `WIRE`/`Intake_Wires`, `GLJE`/`Intake_GL-JE`,
+  `COSTING`/`Intake_Costing`. A disabled type's folder is skipped without downloading, so the sweep
+  never touches `Intake_Costing`.
 - **The documents are OCR'd scans with degraded text** — they DO have a text layer, so the
   NoTextLayer gate does not catch them. `1/5/2026` reads as `11512026`, `6/30/2026` as `6t30t2026`,
   and wire PAR numbers lose their `B` to an `8` (`251103B02FHR` → `251'103802FH   R`). Anchor
@@ -110,8 +114,11 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
 - State lives in SharePoint columns on the library (`RenameStatus`, `RenameAttempts`,
   `RenameContentHash`, ...), not Table Storage — the folder listing already expands
   `listItem($expand=fields)`, so it is free. Columns must be created before enabling.
-- Renaming re-triggers the library's live webhook. **Confirm the target folder is not in a library
-  watched by the Accounting_Research webhook, or retire that webhook, before going live.**
+- **`Shared Documents` IS the library the live Accounting_Research webhook watches.** Every rename
+  (and every status-column write, including in dry run) bumps the item and fires a notification →
+  `FIN_SCAN_Rename_And_Storage` queue item → the same robot this feature replaces. No code change
+  fixes this; it is a cutover decision — retire the robot's rename step, filter/remove the webhook,
+  or point the sweep at `OutputBox` instead. Settle it before `RENAME_DRY_RUN=false`.
 - Graph write permission (`Sites.ReadWrite.All`) is **unverified** — see the checklist in the doc.
 
 Full reference: `docs/document-rename-conventions.md`

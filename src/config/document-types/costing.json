@@ -8,7 +8,8 @@
     ],
     "classify": {
         "folderHints": [
-            "costing"
+            "costing",
+            "intake_costing"
         ],
         "filenameHints": [
             "costing",

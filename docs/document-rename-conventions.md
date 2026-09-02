@@ -4,9 +4,11 @@ Folder-scoped sweep that classifies PDFs in one document-library folder as CHECK
 WIRE, checks each filename against that type's convention, and renames the file via Graph when it is
 wrong. Replaces the rename half of what the `FIN_SCAN_Rename_And_Storage` UiPath robot does.
 
-**Status: not yet live.** Conventions below were derived by reading the real files in the library on
-2026-09-02, not supplied by the business, so every rule set is still marked `"placeholder": true` and
-the worker refuses to rename. See [Confirming the rules](#confirming-the-rules).
+**Status: CHECK, WIRE and GLJE confirmed by the business 2026-09-02** and no longer marked
+`placeholder`, so `RENAME_DRY_RUN` (default `true`) is the only guard left before a live rename.
+COSTING remains disabled — see [Why COSTING is blocked](#why-costing-is-blocked).
+
+**Configured target: `Shared Documents`** — the intake side, scanned recursively.
 
 ---
 
@@ -229,6 +231,20 @@ maintenance as new month folders appear.
 There is deliberately no list id or site path to configure. Status columns are written through
 `/drives/{driveId}/items/{itemId}/listItem/fields`, which needs only what the scan already knows.
 
+### Folder hints cover both libraries
+
+The two libraries name their type folders differently, so every rule set carries both:
+
+| Type | OutputBox | Shared Documents (intake) |
+|---|---|---|
+| CHECK | `CHECK` | `Intake_Checks` |
+| WIRE | `WIRE` | `Intake_Wires` |
+| GLJE | `GLJE` | `Intake_GL-JE` |
+| COSTING | `COSTING` | `Intake_Costing` |
+
+A folder belonging to a **disabled** type is skipped by the timer without downloading anything, so
+with COSTING off the sweep never touches `Intake_Costing`.
+
 ### The folder decides the document type
 
 Because `OutputBox` is organised by type, the folder is the strongest classification signal
@@ -321,15 +337,25 @@ the authoritative vendor list, and confirmation of the prefix mapping — two ob
 fit a clean prefix rule (`LAYLO LLC` invoices are bare numbers like `100456`, and `RAINBOW LINK
 (BANGLADESH) LTD` uses two unrelated prefixes, `RSLGAPZ` and `TISLFAM-`).
 
-To go live:
+Remaining to go live:
 
-1. Confirm CHECK, WIRE and GLJE above.
-2. For COSTING: supply the canonical vendor list and prefix mapping, or leave the type disabled.
-3. Set `"placeholder": false` on each confirmed type.
-4. Update the "are all still placeholders" assertion in
-   `src/shared/__tests__/document-type-rules.test.js`.
-5. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
+1. For COSTING: supply the canonical vendor list and prefix mapping, or leave the type disabled.
+2. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
    For GLJE, review the shape — the id will differ when the live run mints a new one.
+3. Resolve the webhook interaction below.
+
+### Scanning Shared Documents overlaps the live webhook
+
+`Shared Documents` is the library the live Accounting_Research webhook watches. Every rename bumps
+`lastModifiedDateTime`, which fires a notification and produces a `FIN_SCAN_Rename_And_Storage`
+queue item — feeding the same robot whose rename step this feature replaces. Both would then act on
+the same file.
+
+This is not a code problem and no code change fixes it; it is a cutover decision. Either the robot's
+rename step is retired, or the webhook is filtered/removed, or the sweep is pointed at `OutputBox`
+instead so it only corrects files the robot has already filed. Settle it before
+`RENAME_DRY_RUN=false`. A dry run is unaffected — it writes status columns only, and those also
+touch the item, so even the dry run will generate webhook traffic.
 
 Optional accuracy improvement: the `B` → `8` OCR substitution in wire PAR numbers is systematic and
 positional. A targeted correction would convert a chunk of current `MissingFields` exceptions into

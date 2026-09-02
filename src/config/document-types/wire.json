@@ -1,14 +1,15 @@
 {
     "type": "WIRE",
-    "placeholder": true,
-    "_note": "Convention taken from OutputBox/WIRE/{YYYY_MM}/, which is the authoritative post-rename form: WIRE_{parNumber}_${amount}.pdf. This is NOT the form used in Shared Documents/Intake_Wires (Wire__$amount_MM_DD_YYYY) -- that is the pre-rename state. The PAR Number is a U.S. Bank SinglePoint wire reference, YYMMDD + B + 2 digits + 3 alphanumerics. OCR corrupts it systematically: 251103B02FHR reads as \"251'103802FH   R\" (B becomes 8). The validate regex REQUIRES a literal B in position 7, so a corrupted reference fails validation and lands on the exception path rather than producing a confidently wrong name -- the malformed live files WIRE_251125801YWH_... and WIRE_2511258020FR_... are that exact failure leaking through an earlier attempt.",
+    "placeholder": false,
+    "_note": "Convention CONFIRMED by the business 2026-09-02, taken from OutputBox/WIRE/{YYYY_MM}/, which is the authoritative post-rename form: WIRE_{parNumber}_${amount}.pdf. This is NOT the form used in Shared Documents/Intake_Wires (Wire__$amount_MM_DD_YYYY) -- that is the pre-rename state. The PAR Number is a U.S. Bank SinglePoint wire reference, YYMMDD + B + 2 digits + 3 alphanumerics. OCR corrupts it systematically: 251103B02FHR reads as \"251'103802FH   R\" (B becomes 8). The validate regex REQUIRES a literal B in position 7, so a corrupted reference fails validation and lands on the exception path rather than producing a confidently wrong name -- the malformed live files WIRE_251125801YWH_... and WIRE_2511258020FR_... are that exact failure leaking through an earlier attempt.",
     "enabled": true,
     "extensions": [
         ".pdf"
     ],
     "classify": {
         "folderHints": [
-            "wire"
+            "wire",
+            "intake_wires"
         ],
         "filenameHints": [
             "wire"
