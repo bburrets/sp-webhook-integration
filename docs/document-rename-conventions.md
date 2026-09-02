@@ -475,49 +475,18 @@ Remaining to go live:
    For GLJE, review the shape — the id will differ when the live run mints a new one.
 3. Resolve the webhook interaction below.
 
-### Disabling the live webhook (decided 2026-09-02)
+### Scanning Shared Documents overlaps the live webhook
 
-`Shared Documents` is the library the live Accounting_Research webhook watches, so renames would
-fire notifications into `FIN_SCAN_Rename_And_Storage` and have the old robot acting on the same
-files. The decision was to **delete that subscription** and handle filing to `OutputBox` separately.
-No code is removed — `webhook-handler`, `notification-worker` and the dispatchers all stay deployed.
+`Shared Documents` is the library the live Accounting_Research webhook watches. Every rename bumps
+`lastModifiedDateTime`, which fires a notification and produces a `FIN_SCAN_Rename_And_Storage`
+queue item — feeding the same robot whose rename step this feature replaces. Both would then act on
+the same file.
 
-#### How to disable it
-
-1. Find the current subscription id. Do not trust a documented one; they rotate.
-   ```
-   GET https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?code=<function-key>
-   ```
-2. Delete it.
-   ```
-   DELETE https://webhook-functions-sharepoint-002.azurewebsites.net/api/subscription-manager?subscriptionId=<id>&code=<function-key>
-   ```
-3. **Verify the tracking row now reads `Status: Deleted`** in `sphookmanagement`, list
-   `82a105da-8206-4bd0-851b-d3f2260043f4`. This is the step that matters — see below.
-
-#### Why it stays disabled
-
-Three independent mechanisms were checked, and none will resurrect it:
-
-- **`webhook-sync-timer` (hourly) cannot create subscriptions.** It calls `GET /subscriptions` and
-  only PATCHes expiry on what Graph returns. A deleted subscription is simply absent.
-- **The same timer actively marks it dead.** `syncToSharePoint` walks tracking rows whose
-  subscription id is no longer live and writes `Status: 'Deleted'`, so the row is corrected within
-  the hour even if step 3 is skipped.
-- **`recover-webhooks.js` filters `Status === 'Active'`**, so a `Deleted` row is skipped. That
-  script is the documented response to a credential outage, so this is the mechanism most likely to
-  have quietly re-enabled the webhook — a note in the script now says so explicitly.
-
-**The one window.** `subscription-manager`'s delete updates the tracking row fire-and-forget, not
-awaited. Between the delete and the next hourly sync the row may still read `Active`, and a
-`recover-webhooks.js --execute` in that window would recreate the subscription. Confirming step 3
-closes it.
-
-#### What this leaves undone
-
-The sweep renames **in place**; it never moves files. With the webhook off, nothing carries intake
-documents through to `OutputBox` any more — that is the "handled separately" piece, and until it
-exists, files will be correctly named but will stay in `Intake_*`.
+This is not a code problem and no code change fixes it; it is a cutover decision. Either the robot's
+rename step is retired, or the webhook is filtered/removed, or the sweep is pointed at `OutputBox`
+instead so it only corrects files the robot has already filed. Settle it before
+`RENAME_DRY_RUN=false`. A dry run is unaffected — it writes status columns only, and those also
+touch the item, so even the dry run will generate webhook traffic.
 
 ## Deployment checklist
 

@@ -123,17 +123,11 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
   reads `RenameStatus`/`RenameAttempts` to decide what to skip, so a default of `Renamed` or an
   attempts default of 3 would make the sweep skip every file. Create names with no spaces or the
   internal name becomes `Rename_x0020_Status` and writes fail.
-- **The Accounting_Research webhook is being DELETED (decided 2026-09-02)**, because
-  `Shared Documents` is the library it watches and renames would feed the old FIN_SCAN robot. No code
-  is removed; the subscription goes away and filing to OutputBox is handled separately. It stays
-  disabled on its own: the hourly timer cannot create subscriptions, it actively marks the orphaned
-  tracking row `Status: 'Deleted'`, and `recover-webhooks.js` only recreates rows marked `'Active'`
-  — a note in that script warns against flipping the row back. One window to close: the delete
-  updates the tracking row fire-and-forget, so **verify the row reads `Status: Deleted`** afterwards.
-  Procedure in `docs/document-rename-conventions.md`.
-- **Consequence:** the sweep renames in place and never moves files, so with the webhook off nothing
-  carries intake documents through to `OutputBox`. Files will be correctly named but stay in
-  `Intake_*` until the separate filing step exists.
+- **`Shared Documents` IS the library the live Accounting_Research webhook watches.** Every rename
+  (and every status-column write, including in dry run) bumps the item and fires a notification →
+  `FIN_SCAN_Rename_And_Storage` queue item → the same robot this feature replaces. No code change
+  fixes this; it is a cutover decision — retire the robot's rename step, filter/remove the webhook,
+  or point the sweep at `OutputBox` instead. Settle it before `RENAME_DRY_RUN=false`.
 - Graph write permission (`Sites.ReadWrite.All`) is **unverified** — see the checklist in the doc.
 
 - **WIRE fields are on a LATER page, not page 1.** The PAR Number and a clean unformatted
