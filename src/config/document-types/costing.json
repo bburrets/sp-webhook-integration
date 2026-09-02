@@ -1,24 +1,32 @@
 {
     "type": "COSTING",
     "placeholder": true,
-    "_note": "NO CONSISTENT CONVENTION EXISTS TODAY. Observed names in Intake_Costing are Costing_01.pdf, Costing_Image_00.pdf, costing_Image_001.pdf, Costing_Image02.pdf, Costing_Image_03.pdf -- inconsistent casing, inconsistent underscores, and a bare sequence number carrying no document data. The rule below is a SEQUENCE-ONLY placeholder that renames nothing useful. The business must define what a costing document should be named before this type can be enabled.",
+    "_note": "Convention taken from OutputBox/COSTING/ (flat, no dated subfolders): '{Vendor} -  {InvoiceNumber}.pdf'. The separator is space-hyphen-SPACE-SPACE. Vendor casing is NOT normalised in the live data -- 'BEG4KLOTHING, INC' and 'Beg4Kloathing, Inc' are the same vendor spelled two ways. STILL DISABLED: the invoice number extracts reliably from the 'INVOICE NO.' label, but the vendor name does NOT. Letterheads are the most OCR-corrupted part of these pages (large stylised fonts scan worst): 'IDEAL GROUP HOLDINGS LIMITED' reads as 'IDf,AL GROUP HOLDINGS LIMITED' and 'MOLAX TRADING LIMITED' as 'i,lOLAX TRADING LIIMITED'. Only some invoices carry a 'VENDOR' label. A vendor lookup keyed on the invoice-number prefix is the viable fix and needs the business to supply the canonical vendor list.",
     "enabled": false,
     "extensions": [".pdf"],
     "classify": {
         "filenameHints": ["costing", "cost sheet", "costsheet"],
         "contentPatterns": [
-            "\\bCost(?:ing)?\\s+Sheet\\b",
-            "\\bTotal\\s+(?:Garment\\s+)?Cost\\b"
+            "\\bCommercial\\s+Invoice\\b",
+            "\\bINVOICE\\s+NO\\b",
+            "\\bPORT\\s+OF\\s+(?:LOADING|DISCHARGE)\\b",
+            "\\bFOB\\s+PRIC"
         ],
         "minMatches": 1
     },
     "fields": {
-        "sequence": {
-            "pattern": "(?:Costing|Image)[_\\s]*(\\d{1,4})",
+        "vendorName": {
+            "pattern": "VENDOR\\s+([A-Z][A-Za-z0-9 &.,()'\\-]{2,60}?)\\s{2,}",
             "required": true,
-            "transform": ["digits"]
+            "transform": ["trim"],
+            "maxLength": 60
+        },
+        "invoiceNumber": {
+            "pattern": "INVOICE\\s*NO\\.?\\s*[:r]?\\s*([A-Za-z0-9][A-Za-z0-9\\-]{2,30})",
+            "required": true,
+            "transform": ["trim", "upper"]
         }
     },
-    "template": "Costing_{sequence}",
-    "validate": "^Costing_\\d{1,4}\\.pdf$"
+    "template": "{vendorName} -  {invoiceNumber}",
+    "validate": "^[A-Za-z0-9][A-Za-z0-9 &.,()'\\-]* -  [A-Za-z0-9\\-]+\\.pdf$"
 }

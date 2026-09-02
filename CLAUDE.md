@@ -74,13 +74,17 @@ document-rename-timer (0 30 * * * *) --enqueue--> [document-rename] --> document
 ```
 
 **Two libraries, two stages.** `Shared Documents/Intake_{Checks,Wires,GL-JE,Costing}` is the
-pre-rename intake; **`OutputBox/{CHECK,GLJE,WIRE}` is the authoritative post-rename form** and is
-where the conventions come from. Both use dated subfolders. OutputBox has no COSTING.
+pre-rename intake; **`OutputBox/{CHECK,GLJE,WIRE,COSTING}` is the authoritative post-rename form** and is
+where the conventions come from. All use dated subfolders except `OutputBox/COSTING`, which is flat.
 For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
 `WIRE_251103B02FHR_$237,800.00.pdf` (keyed on the U.S. Bank PAR Number, not a date).
 
 - Rules live in `src/config/document-types/{check,costing,glje,wire}.json`, validated at load time.
-  CHECK, WIRE and GLJE all extract end to end today. COSTING has no convention and is disabled.
+  CHECK, WIRE and GLJE all extract end to end today. **COSTING is blocked and ships disabled**: its
+  convention is `{Vendor} -  {InvoiceNumber}.pdf` (separator is space-hyphen-space-space) and the
+  invoice number extracts fine, but the vendor name does not — letterheads are the most OCR-corrupted
+  part of the page (`IDEAL` reads as `IDf,AL`) and only some invoices carry a `VENDOR` label. Fix is
+  a vendor lookup keyed on the invoice-number prefix; needs the canonical vendor list.
 - **GLJE's trailing 6-digit id is randomly generated**, not read from the document (confirmed
   2026-09-02). So a dry-run GLJE name will NOT equal what a live run produces — check the shape, not
   the value. A collision on it is bad luck, so the worker re-mints and retries; a collision on an

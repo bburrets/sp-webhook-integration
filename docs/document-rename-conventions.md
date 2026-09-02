@@ -22,10 +22,11 @@ Shared Documents/Intake_Checks/{YYYY}/{YYYY_MM}/    Intake_GL-JE/{YYYY_MM}/
                  Intake_Wires/{YYYY_MM}/            Intake_Costing/{YYYY_MM}/
 ```
 
-**`OutputBox`** is the authoritative post-rename form — three type folders, no COSTING:
+**`OutputBox`** is the authoritative post-rename form — four type folders:
 
 ```
-OutputBox/CHECK/{YYYY}/{YYYY_MM}/   OutputBox/GLJE/{YYYY_MM}/   OutputBox/WIRE/{YYYY_MM}/
+OutputBox/CHECK/{YYYY}/{YYYY_MM}/   OutputBox/GLJE/{YYYY_MM}/
+OutputBox/WIRE/{YYYY_MM}/           OutputBox/COSTING/          <- flat, no dated subfolders
 ```
 
 Site: `fambrandsllc.sharepoint.com:/sites/Accounting_Research:`
@@ -258,12 +259,36 @@ confirmation.
 | CHECK | `Check_{number}_{PAYEE}_{M}_{D}_{YYYY}.pdf` | `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf` | **Extracts end to end today.** Note `Check` is title case and the date is **not** zero-padded. |
 | WIRE | `WIRE_{parNumber}_${amount}.pdf` | `WIRE_251103B02FHR_$237,800.00.pdf` | **Extracts end to end today** when OCR is clean. `WIRE` is uppercase, single underscore, no date — the PAR Number encodes it (`251103` = 2025-11-03). Amount keeps `$` and commas. |
 | GLJE | `GLJE_{MM}_{DD}_{YYYY}_{6 digits}.pdf` | `GLJE_11_03_2025_129334.pdf` | **Extracts end to end today.** The G/L date comes from the document; the trailing 6 digits are **randomly generated** (confirmed 2026-09-02), so the name is not reproducible between runs. |
-| COSTING | none | `Costing_01.pdf`, `costing_Image_001.pdf` | **No convention exists**, and OutputBox has no COSTING folder. Ships `"enabled": false`. |
+| COSTING | `{Vendor} -  {InvoiceNumber}.pdf` (separator is space-hyphen-**space-space**) | `MOLAX TRADING LIMITED -  BIM-26-006.pdf` | **Blocked, ships disabled.** The invoice number extracts reliably; the vendor name does not. See below. |
+
+### Why COSTING is blocked
+
+The convention itself is clear, and the validate regex accepts all 29 real filenames. The problem is
+extraction:
+
+- **Invoice number: fine.** It comes off the `INVOICE NO.` label, which survives OCR
+  (`INVOICE NO.: BIM-26-006`, `INVOICE NO.r 100456` — the label degrades, the value does not).
+- **Vendor name: not extractable.** Letterheads are the most OCR-corrupted part of these pages
+  because large stylised fonts scan worst. `IDEAL GROUP HOLDINGS LIMITED` reads as
+  `IDf,AL GROUP HOLDINGS LIMITED`; `MOLAX TRADING LIMITED` as `i,lOLAX TRADING LIIMITED`. Only some
+  invoices carry a `VENDOR` label at all, and where one exists the value is split by OCR spacing
+  (`VENDOR  LAYLO   LLC` yields `LAYLO`, not `LAYLO LLC`).
+
+The live data is inconsistent for the same reason: `BEG4KLOTHING, INC` and `Beg4Kloathing, Inc` are
+the same vendor, spelled and cased two ways.
+
+**The viable fix is a vendor lookup keyed on the invoice-number prefix**, which is vendor-specific
+and extracts cleanly: `AIT-FAM-` → Ai Trading Inc, `B4K` → BEG4KLOTHING INC, `IDL` → IDEAL GROUP
+HOLDINGS LIMITED, `BIM-` → MOLAX TRADING LIMITED, `GRTX-` → GARTEX OVERSEAS LIMITED, and so on.
+That would also canonicalise the existing spelling drift. It needs two things from the business:
+the authoritative vendor list, and confirmation of the prefix mapping — two observed cases do not
+fit a clean prefix rule (`LAYLO LLC` invoices are bare numbers like `100456`, and `RAINBOW LINK
+(BANGLADESH) LTD` uses two unrelated prefixes, `RSLGAPZ` and `TISLFAM-`).
 
 To go live:
 
 1. Confirm CHECK, WIRE and GLJE above.
-2. Define a COSTING convention, or leave that type disabled.
+2. For COSTING: supply the canonical vendor list and prefix mapping, or leave the type disabled.
 3. Set `"placeholder": false` on each confirmed type.
 4. Update the "are all still placeholders" assertion in
    `src/shared/__tests__/document-type-rules.test.js`.

@@ -284,6 +284,78 @@ describe('document-type-rules', () => {
         });
     });
 
+    describe('the COSTING rules (shipped disabled)', () => {
+        const fsMod = require('fs');
+        const pathMod = require('path');
+
+        function loadCosting() {
+            const file = pathMod.join(__dirname, '..', '..', 'config', 'document-types', 'costing.json');
+            return validateRuleSet(JSON.parse(fsMod.readFileSync(file, 'utf8')), 'costing.json');
+        }
+
+        it('is excluded from the active rule sets', () => {
+            expect(getRuleSets().map((r) => r.type)).not.toContain('COSTING');
+        });
+
+        it('still validates as a well-formed rule set', () => {
+            expect(loadCosting().type).toBe('COSTING');
+        });
+
+        it('accepts every real OutputBox/COSTING filename', () => {
+            // The convention is "{Vendor} -  {InvoiceNumber}.pdf" -- note the
+            // separator is space-hyphen-SPACE-SPACE, and vendor names carry
+            // spaces, commas, ampersands, parentheses and hyphens.
+            const real = [
+                'Ai Trading Inc -  AIT-FAM-1406-2024.pdf',
+                'BEG4KLOTHING, INC -  B4K26-FA044.pdf',
+                'Beg4Kloathing, Inc -  B4K26-FA046.pdf',
+                'COMPASS APPAREL INC -  8892-120.pdf',
+                'CROWN WISE INTERNATIONAL INDUSTRIAL LIMITED -  FAM-2023-0067-YC-YC23SHA41.pdf',
+                'R&G Global Limited Co -  GTGS26290071006.pdf',
+                'RAINBOW LINK (BANGLADESH) LTD -  RSLGAPZ60292.pdf',
+                'SHANGHAI NANCY SPORTING GOODS CO, LTD -  EQ1787.pdf',
+                'YIA-CHYNS ENTERPRISE CO,LTD -  YC26SHA21.pdf',
+                'LAYLO LLC -  100456.pdf',
+                'Zhangjiagang Unitex Ltd Co -  UX241209103.pdf'
+            ];
+            const costing = loadCosting();
+            real.forEach((name) => {
+                expect({ name, compliant: costing.validateRegex.test(name) })
+                    .toEqual({ name, compliant: true });
+            });
+        });
+
+        it('rejects the pre-rename intake names', () => {
+            const costing = loadCosting();
+            ['Costing_01.pdf', 'costing_Image_001.pdf', 'Costing_Image02.pdf']
+                .forEach((n) => expect(costing.validateRegex.test(n)).toBe(false));
+        });
+
+        it('extracts the invoice number but not the vendor name', () => {
+            // Why COSTING ships disabled. The invoice number comes off the
+            // "INVOICE NO." label reliably; the vendor name does not, because
+            // letterheads are the most OCR-corrupted part of these pages and
+            // only some invoices carry a "VENDOR" label.
+            const { extractFields } = require('../document-naming-engine');
+            const costing = loadCosting();
+
+            const noVendorLabel = extractFields(
+                'INVOICE   NO.:   BIM-26-006\nACCOUNT   NAME:   i,lOLAX TRADING   LIIMITED\n',
+                costing
+            );
+            expect(noVendorLabel.values.invoiceNumber).toBe('BIM-26-006');
+            expect(noVendorLabel.missing).toContain('vendorName');
+
+            const withVendorLabel = extractFields(
+                'INVOICE NO.r   100456  DATEr 13-06-2025\nVENDOR  LAYLO   LLC  1035   SOUTH GRAND\n',
+                costing
+            );
+            expect(withVendorLabel.values.invoiceNumber).toBe('100456');
+            // Truncated: the pattern stops at the double space inside "LAYLO   LLC".
+            expect(withVendorLabel.values.vendorName).toBe('LAYLO');
+        });
+    });
+
     describe('getRuleSet', () => {
         it('looks up by type, case-insensitively', () => {
             expect(getRuleSet('glje').type).toBe('GLJE');
