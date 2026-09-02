@@ -1,35 +1,30 @@
 {
     "type": "WIRE",
     "placeholder": true,
-    "_note": "PLACEHOLDER RULES. The real WIRE convention has not been supplied yet. While placeholder is true the worker refuses to rename regardless of RENAME_DRY_RUN.",
+    "_note": "Convention DERIVED from real filenames in Intake_Wires/{YYYY_MM}/. Note the DOUBLE underscore after 'Wire' and that the amount keeps its dollar sign, thousands commas and cents. Many live files are malformed (e.g. 'Wire__$1,375,110.00_.pdf', 'Wire__$963,164.00_32_12_2026.pdf' where 32 is not a month) which is exactly what this sweep is meant to fix.",
     "enabled": true,
     "extensions": [".pdf"],
     "classify": {
-        "filenameHints": ["wire", "wire transfer", "remittance"],
+        "filenameHints": ["wire"],
         "contentPatterns": [
             "\\bWire\\s+(?:Transfer|Payment|Advice)\\b",
-            "\\bBeneficiary\\s+(?:Name|Bank)\\b"
+            "\\bBeneficiary\\b",
+            "\\bFed\\s*Reference\\b"
         ],
         "minMatches": 1
     },
     "fields": {
-        "beneficiary": {
-            "pattern": "Beneficiary(?:\\s+Name)?[:\\s]+(.+?)(?:\\r?\\n|$)",
-            "required": true,
-            "transform": ["trim", "upper", "alnum"],
-            "maxLength": 30
-        },
         "amount": {
-            "pattern": "(?:Amount|Total)[:\\s]+(?:USD\\s*)?\\$?\\s*([\\d,]+(?:\\.\\d{2})?)",
+            "pattern": "(?:Amount|Total|USD)[:\\s]*\\$?\\s*([\\d,]+\\.\\d{2})",
             "required": true,
-            "transform": ["digits"]
+            "transform": ["trim"]
         },
         "valueDate": {
-            "pattern": "(?:Value\\s+Date|Date)[:\\s]+(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4})",
+            "pattern": "\\b(\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{4})\\b",
             "required": true,
-            "transform": ["date:YYYYMMDD"]
+            "transform": ["date:MM_DD_YYYY"]
         }
     },
-    "template": "WIRE_{beneficiary}_{amount}_{valueDate}",
-    "validate": "^WIRE_[A-Z0-9]{1,30}_\\d+_\\d{8}\\.pdf$"
+    "template": "Wire__${amount}_{valueDate}",
+    "validate": "^Wire__\\$[\\d,]+\\.\\d{2}_\\d{2}_\\d{2}_\\d{4}\\.pdf$"
 }

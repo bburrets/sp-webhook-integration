@@ -55,24 +55,33 @@ describe('document-naming-engine', () => {
     });
 
     describe('sanitizeToken', () => {
-        it('strips characters outside the allowlist', () => {
-            expect(sanitizeToken('Acme Widgets, Inc.')).toBe('AcmeWidgetsInc');
+        it('preserves the punctuation real payee names contain', () => {
+            // The live convention keeps these, e.g.
+            // "Check_38521_LA ANTENA PALLETS & LUMBER SALES INC_1_7_2026.pdf"
+            expect(sanitizeToken('Acme Widgets, Inc.')).toBe('Acme Widgets, Inc');
+            expect(sanitizeToken('LA ANTENA PALLETS & LUMBER SALES INC'))
+                .toBe('LA ANTENA PALLETS & LUMBER SALES INC');
+            expect(sanitizeToken("NACHO'S LOCK & KEY SERVICE")).toBe("NACHO'S LOCK & KEY SERVICE");
         });
 
-        it('strips the token separator', () => {
-            expect(sanitizeToken('ACME_WIDGETS')).toBe('ACMEWIDGETS');
+        it('keeps underscores, which the date transforms legitimately emit', () => {
+            expect(sanitizeToken('1_5_2026')).toBe('1_5_2026');
+        });
+
+        it('collapses the whitespace runs OCR text is full of', () => {
+            expect(sanitizeToken('MICHAEL    RADOCHAY')).toBe('MICHAEL RADOCHAY');
         });
 
         it('neutralises path traversal', () => {
             expect(sanitizeToken('../../etc/passwd')).toBe('etcpasswd');
         });
 
-        it('strips SharePoint-illegal filename characters', () => {
+        it('still strips every SharePoint-illegal character', () => {
             expect(sanitizeToken('a"b*c:d<e>f?g/h\\i|j')).toBe('abcdefghij');
         });
 
         it('collapses and trims hyphen runs left by stripping', () => {
-            expect(sanitizeToken('ACME -- INC')).toBe('ACME-INC');
+            expect(sanitizeToken('ACME -- INC')).toBe('ACME - INC');
             expect(sanitizeToken('  -ACME-  ')).toBe('ACME');
         });
 

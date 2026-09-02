@@ -212,7 +212,8 @@ describe('document-type-rules', () => {
 
     describe('the rule sets shipped in this repo', () => {
         it('all load and validate', () => {
-            expect(getRuleSets().map((r) => r.type).sort()).toEqual(['CHECK', 'COSTING', 'GLJE', 'WIRE']);
+            // COSTING ships disabled: no naming convention exists for it yet.
+            expect(getRuleSets().map((r) => r.type).sort()).toEqual(['CHECK', 'GLJE', 'WIRE']);
         });
 
         it('every rendered-name convention is self-consistent', () => {
@@ -227,7 +228,7 @@ describe('document-type-rules', () => {
         it('are all still placeholders pending the real conventions', () => {
             // This test is expected to be updated when real rules land.
             expect(hasPlaceholderRules()).toBe(true);
-            expect(placeholderTypes().sort()).toEqual(['CHECK', 'COSTING', 'GLJE', 'WIRE']);
+            expect(placeholderTypes().sort()).toEqual(['CHECK', 'GLJE', 'WIRE']);
         });
     });
 

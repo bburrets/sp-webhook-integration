@@ -32,11 +32,14 @@ async function runPipeline(fixture, fileName = 'scan_0417.pdf') {
 }
 
 describe('document pipeline over real PDFs', () => {
+    // Expected names follow the conventions derived from the real files in
+    // Intake_Checks / Intake_Wires / Intake_GL-JE. The check and wire fixtures
+    // reproduce genuine filenames observed in the library.
+    // COSTING is absent: it is disabled until the business defines a convention.
     const expected = {
-        glje: 'GLJE_FAM_202608_12345.pdf',
-        check: 'CHECK_ACMEWIDGETSINC_000123_20260819.pdf',
-        costing: 'COSTING_ABC1234_SPRING2026_R2.pdf',
-        wire: 'WIRE_GLOBALTEXTILESLTD_4500000_20260820.pdf'
+        check: 'Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf',
+        glje: 'GLJE_06_30_2026_1.pdf',
+        wire: 'Wire__$18,593.28_02_03_2026.pdf'
     };
 
     describe.each(Object.keys(expected))('%s.pdf', (fixture) => {

@@ -1,35 +1,48 @@
 {
     "type": "CHECK",
     "placeholder": true,
-    "_note": "PLACEHOLDER RULES. The real CHECK convention has not been supplied yet. While placeholder is true the worker refuses to rename regardless of RENAME_DRY_RUN. Replace patterns/template/validate with the real convention and set placeholder to false.",
+    "_note": "Convention DERIVED from real filenames in Intake_Checks/{YYYY}/{YYYY_MM}/, not yet confirmed by the business. checkNumber and payee extract cleanly from the OCR text; checkDate is the weak field (OCR renders slashes as digits, e.g. 1/5/2026 -> '11512026'). Keep placeholder true until a dry run measures the real hit rate.",
     "enabled": true,
-    "extensions": [".pdf"],
+    "extensions": [
+        ".pdf"
+    ],
     "classify": {
-        "filenameHints": ["check", "chk"],
+        "filenameHints": [
+            "check",
+            "chk"
+        ],
         "contentPatterns": [
-            "\\bCheck\\s*(?:No|Number|#)",
-            "\\bPay\\s+to\\s+the\\s+order\\s+of\\b"
+            "\\bCheck\\s*Total\\b",
+            "\\bCheck:\\s*\\d{6,}",
+            "\\bNet\\s+Amount\\b"
         ],
         "minMatches": 1
     },
     "fields": {
-        "vendor": {
-            "pattern": "Pay\\s+to\\s+the\\s+order\\s+of[:\\s]+(.+?)(?:\\r?\\n|$)",
-            "required": true,
-            "transform": ["trim", "upper", "alnum"],
-            "maxLength": 30
-        },
         "checkNumber": {
-            "pattern": "Check\\s*(?:No|Number|#)\\.?\\s*[:#]?\\s*(\\d{3,12})",
+            "pattern": "Check:\\s*0*(\\d{3,10})",
             "required": true,
-            "transform": ["digits"]
+            "transform": [
+                "trim"
+            ]
+        },
+        "payee": {
+            "pattern": "([A-Z][A-Za-z0-9 &.,'#\\-]{2,60}?)\\s+Check\\s+Total",
+            "required": true,
+            "transform": [
+                "trim",
+                "upper"
+            ],
+            "maxLength": 60
         },
         "checkDate": {
-            "pattern": "(?:Check\\s*)?Date[:\\s]+(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4})",
+            "pattern": "(\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{4})\\s+[A-Z][^\\n]*?Check\\s+Total",
             "required": true,
-            "transform": ["date:YYYYMMDD"]
+            "transform": [
+                "date:M_D_YYYY"
+            ]
         }
     },
-    "template": "CHECK_{vendor}_{checkNumber}_{checkDate}",
-    "validate": "^CHECK_[A-Z0-9]{1,30}_\\d{3,12}_\\d{8}\\.pdf$"
+    "template": "Check_{checkNumber}_{payee}_{checkDate}",
+    "validate": "^Check_\\d{3,10}_[A-Z0-9][A-Za-z0-9 &.,'#\\-]*_\\d{1,2}_\\d{1,2}_\\d{4}\\.pdf$"
 }

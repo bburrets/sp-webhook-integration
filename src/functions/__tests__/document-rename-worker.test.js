@@ -55,8 +55,11 @@ const {
     DETERMINISTIC_STATUSES
 } = require('../document-rename-worker');
 
-const GLJE_TEXT = 'General Journal Entry\nEntity: FAM\nPeriod: 2026-08\nJE Number: 12345\n'
-    + 'Prepared by accounting for the month end close process\n';
+// Mirrors the real OCR'd GL journal documents: the G/L Date line comes through
+// cleanly, which is what the glDate pattern anchors on.
+const GLJE_TEXT = 'General Journal FAM, LLC (FAM)\nJE-000001 Source Journal Posted\n'
+    + 'Account Number Description Debit Credit\nReport Totals: 214,815.93\n'
+    + 'Run Date: 7/1/2026 G/L Date: 6/30/2026\n';
 
 function job(overrides = {}) {
     return {
@@ -108,7 +111,7 @@ describe('document-rename-worker', () => {
         checkCollision.mockReturnValue({ collides: false, conflictingFile: null });
         renameFile.mockResolvedValue({
             renamed: true, dryRun: false, collision: false,
-            newName: 'GLJE_FAM_202608_12345.pdf', error: null
+            newName: 'GLJE_06_30_2026_1.pdf', error: null
         });
         resolveDryRun.mockReturnValue({ dryRun: false, reason: null });
         writeStatus.mockResolvedValue(true);
@@ -135,7 +138,7 @@ describe('document-rename-worker', () => {
             expect(result.status).toBe(RENAME_STATUS.RENAMED);
             expect(renameFile).toHaveBeenCalledWith(expect.objectContaining({
                 driveId: 'drive-1', driveItemId: 'item-1',
-                newName: 'GLJE_FAM_202608_12345.pdf', dryRun: false
+                newName: 'GLJE_06_30_2026_1.pdf', dryRun: false
             }));
             expect(recorded()).toMatchObject({
                 status: RENAME_STATUS.RENAMED,
@@ -174,7 +177,7 @@ describe('document-rename-worker', () => {
         });
 
         it('stops when the name became compliant since the sweep', async () => {
-            getFileById.mockResolvedValue(scannedFile({ name: 'GLJE_FAM_202608_12345.pdf' }));
+            getFileById.mockResolvedValue(scannedFile({ name: 'GLJE_06_30_2026_1.pdf' }));
             const result = await handleRenameMessage(job(), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.ALREADY_COMPLIANT);
@@ -223,22 +226,22 @@ describe('document-rename-worker', () => {
 
         it('records MissingFields naming the fields, and the detected type', async () => {
             extractDocumentText.mockResolvedValue({
-                text: 'General Journal Entry\nJE Number: 12345\n',
+                text: 'General Journal FAM, LLC\nJE-000001 posted to the ledger\n',
                 hasTextLayer: true, charCount: 60, pageCount: 1, byteLength: 1000, unsupported: false
             });
             const result = await handleRenameMessage(job(), mockContext());
 
             expect(result.status).toBe(RENAME_STATUS.MISSING_FIELDS);
             expect(recorded().docType).toBe('GLJE');
-            expect(recorded().detail).toMatch(/Could not extract required field\(s\).*entity/);
+            expect(recorded().detail).toMatch(/Could not extract required field\(s\).*glDate/);
             expect(renameFile).not.toHaveBeenCalled();
         });
 
         it('records NameCollision when Graph rejects the rename', async () => {
             renameFile.mockResolvedValue({
                 renamed: false, dryRun: false, collision: true,
-                newName: 'GLJE_FAM_202608_12345.pdf',
-                error: 'A file named "GLJE_FAM_202608_12345.pdf" already exists in the folder'
+                newName: 'GLJE_06_30_2026_1.pdf',
+                error: 'A file named "GLJE_06_30_2026_1.pdf" already exists in the folder'
             });
             const result = await handleRenameMessage(job({ attempts: 1 }), mockContext());
 
@@ -266,7 +269,7 @@ describe('document-rename-worker', () => {
 
             expect(result.status).toBe(RENAME_STATUS.DRY_RUN);
             expect(renameFile).not.toHaveBeenCalled();
-            expect(recorded().detail).toMatch(/Would rename to "GLJE_FAM_202608_12345\.pdf"/);
+            expect(recorded().detail).toMatch(/Would rename to "GLJE_06_30_2026_1\.pdf"/);
             expect(recorded().docType).toBe('GLJE');
         });
 

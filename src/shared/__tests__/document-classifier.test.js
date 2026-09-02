@@ -163,10 +163,11 @@ describe('document-classifier', () => {
 
     describe('against the rule sets shipped in this repo', () => {
         it('classifies each document type from representative text', () => {
+            // Texts mirror what the real OCR'd documents contain.
+            // COSTING is omitted: it is disabled pending a defined convention.
             const samples = {
-                GLJE: 'General Journal Entry\nJE Number: 12345',
-                CHECK: 'Pay to the order of: Acme Widgets Inc',
-                COSTING: 'Costing Sheet\nTotal Garment Cost: 12.45',
+                GLJE: 'General Journal FAM, LLC\nG/L Date: 6/30/2026',
+                CHECK: 'Check: 0000038490\nMICHAEL RADOCHAY Check Total 5,000.00',
                 WIRE: 'Wire Transfer Advice\nBeneficiary Name: Acme'
             };
             for (const [type, text] of Object.entries(samples)) {

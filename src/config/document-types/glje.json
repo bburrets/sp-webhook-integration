@@ -1,35 +1,30 @@
 {
     "type": "GLJE",
     "placeholder": true,
-    "_note": "PLACEHOLDER RULES. The real GLJE convention has not been supplied yet. While placeholder is true the worker refuses to rename regardless of RENAME_DRY_RUN.",
+    "_note": "Convention DERIVED from Intake_GL-JE/{YYYY_MM}/ (observed: GLJE_06_30_2026_418627.pdf). The G/L Date line extracts cleanly from the OCR text. jeNumber is UNCONFIRMED: the sample filename ends 418627 but the document body shows 'JE-000001', so the trailing number may come from a batch or document id this pattern does not yet capture. Needs one confirmed example before going live.",
     "enabled": true,
     "extensions": [".pdf"],
     "classify": {
-        "filenameHints": ["glje", "gl je", "journal entry"],
+        "filenameHints": ["glje", "gl je", "gl-je", "journal"],
         "contentPatterns": [
-            "\\bGeneral\\s+(?:Ledger\\s+)?Journal\\s+Entry\\b",
-            "\\bJE\\s*(?:No|Number|#)"
+            "\\bGeneral\\s+Journal\\b",
+            "\\bG/L\\s+Date\\b",
+            "\\bJE-\\d{4,}"
         ],
         "minMatches": 1
     },
     "fields": {
-        "entity": {
-            "pattern": "(?:Entity|Company)\\s*(?:Code)?[:\\s]+([A-Za-z0-9]{2,10})",
+        "glDate": {
+            "pattern": "G/L\\s+Date:\\s*(\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{4})",
             "required": true,
-            "transform": ["trim", "upper", "alnum"],
-            "maxLength": 10
-        },
-        "period": {
-            "pattern": "Period[:\\s]+(\\d{4}[-/]?\\d{2}|\\d{2}[-/]\\d{4})",
-            "required": true,
-            "transform": ["digits"]
+            "transform": ["date:MM_DD_YYYY"]
         },
         "jeNumber": {
-            "pattern": "JE\\s*(?:No|Number|#)?\\.?\\s*[:#]?\\s*(\\d{3,12})",
+            "pattern": "JE[-\\s]*0*(\\d{1,8})",
             "required": true,
-            "transform": ["digits"]
+            "transform": ["trim"]
         }
     },
-    "template": "GLJE_{entity}_{period}_{jeNumber}",
-    "validate": "^GLJE_[A-Z0-9]{1,10}_\\d{6}_\\d{3,12}\\.pdf$"
+    "template": "GLJE_{glDate}_{jeNumber}",
+    "validate": "^GLJE_\\d{2}_\\d{2}_\\d{4}_\\d{1,8}\\.pdf$"
 }

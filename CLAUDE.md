@@ -74,9 +74,20 @@ document-rename-timer (0 30 * * * *) --enqueue--> [document-rename] --> document
 ```
 
 - Rules live in `src/config/document-types/{check,costing,glje,wire}.json`, validated at load time.
-- **All four rule sets are `"placeholder": true`.** While any is, the worker refuses to rename no
-  matter what `RENAME_DRY_RUN` says — the patterns are guesses at the real convention. Real naming
-  rules were never in this repo; they live in the UiPath robot.
+  Conventions were derived from the real library on 2026-09-02 (e.g.
+  `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf`, `Wire__$18,593.28_02_03_2026.pdf`). COSTING has no
+  convention at all and ships `enabled: false`.
+- **All rule sets are `"placeholder": true` pending business confirmation.** While any is, the
+  worker refuses to rename no matter what `RENAME_DRY_RUN` says.
+- **The documents are OCR'd scans with degraded text** — they DO have a text layer, so the
+  NoTextLayer gate does not catch them, but dates and amounts are frequently corrupted
+  (`1/5/2026` → `11512026`, `6/30/2026` → `6t30t2026`). Anchor patterns on lines that survive
+  (`Check:`, `G/L Date:`). Bad extractions fail safe to the exception path; the open question is
+  hit rate, which only a dry run can measure.
+- **`Shared Documents` is four intake trees with dated subfolders**
+  (`Intake_Checks/{YYYY}/{YYYY_MM}`, `Intake_Wires/{YYYY_MM}`, `Intake_GL-JE/{YYYY_MM}`,
+  `Intake_Costing`). The scanner does NOT recurse, and folder-based classification is not yet
+  implemented though the folder is the strongest type signal available.
 - `RENAME_ENABLED` defaults **false**, `RENAME_DRY_RUN` defaults **true**. A missing setting cannot
   cause a live rename.
 - Scanned PDFs have no text layer, so they are recorded `NoTextLayer` and never renamed. No OCR.

@@ -17,10 +17,19 @@ const { applyTransforms } = require('./document-field-transforms');
 // name is held well below its own ceiling.
 const MAX_FILENAME_LENGTH = 200;
 
-// Everything outside this set is stripped from a rendered token. Underscore is
-// excluded on purpose: it is the token separator, so allowing it inside a value
-// would make a rendered name ambiguous and could break the validate regex.
-const TOKEN_ALLOWED = /[^A-Za-z0-9-]+/g;
+// Only what SharePoint actually forbids in a filename is stripped.
+//
+// This is deliberately permissive: the real conventions in this library keep
+// spaces, ampersands, commas, apostrophes and periods inside values -- e.g.
+// "Check_38521_LA ANTENA PALLETS & LUMBER SALES INC_1_7_2026.pdf". An
+// alphanumeric-only allowlist would mangle those into
+// "LAANTENAPALLETSLUMBERSALESINC" and never match the convention.
+//
+// Underscore is NOT stripped even though it separates tokens: the date
+// transforms (date:M_D_YYYY) legitimately emit it, and the per-type validate
+// regex already rejects any value that breaks the expected shape.
+const FILENAME_ILLEGAL = /["*:<>?/\\|]+/g;
+const CONTROL_CHARS = /[\x00-\x1f\x7f]+/g;
 
 /**
  * Return the lowercased extension of a filename, including the dot.
@@ -59,11 +68,14 @@ function sanitizeToken(value) {
         return '';
     }
     return String(value)
-        .replace(TOKEN_ALLOWED, '')
+        .replace(CONTROL_CHARS, '')
+        .replace(FILENAME_ILLEGAL, '')
+        // Collapse internal whitespace runs; OCR text is full of them.
+        .replace(/\s{2,}/g, ' ')
         // Collapse and trim hyphen runs so a stripped value cannot leave
-        // dangling separators like "ACME--INC" or "-ACME-".
+        // dangling separators like "ACME--INC".
         .replace(/-{2,}/g, '-')
-        .replace(/^-+|-+$/g, '');
+        .replace(/^[-\s.]+|[-\s.]+$/g, '');
 }
 
 /**

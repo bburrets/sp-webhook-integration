@@ -65,7 +65,13 @@ const DATE_FORMATTERS = {
     MMDDYYYY: ({ year, month, day }) =>
         `${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}${year}`,
     YYMMDD: ({ year, month, day }) =>
-        `${String(year).slice(-2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`
+        `${String(year).slice(-2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`,
+    // Underscore-separated forms, matching the conventions actually in use in
+    // this library. Note CHECK does not zero-pad ("Check_..._1_5_2026") while
+    // WIRE and GLJE do ("Wire__$18,593.28_02_03_2026"), so both exist.
+    'M_D_YYYY': ({ year, month, day }) => `${month}_${day}_${year}`,
+    'MM_DD_YYYY': ({ year, month, day }) =>
+        `${String(month).padStart(2, '0')}_${String(day).padStart(2, '0')}_${year}`
 };
 
 const SIMPLE_TRANSFORMS = {

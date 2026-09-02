@@ -4,8 +4,63 @@ Folder-scoped sweep that classifies PDFs in one document-library folder as CHECK
 WIRE, checks each filename against that type's convention, and renames the file via Graph when it is
 wrong. Replaces the rename half of what the `FIN_SCAN_Rename_And_Storage` UiPath robot does.
 
-**Status: not yet live.** All four rule sets ship as placeholders — the real naming conventions have
-not been supplied. See [Supplying the real rules](#supplying-the-real-rules).
+**Status: not yet live.** Conventions below were derived by reading the real files in the library on
+2026-09-02, not supplied by the business, so every rule set is still marked `"placeholder": true` and
+the worker refuses to rename. See [Confirming the rules](#confirming-the-rules).
+
+---
+
+## The library, as it actually is
+
+`Shared Documents` is not one folder. It is four type-specific intake trees with dated subfolders:
+
+```
+Shared Documents/
+├── Intake_Checks/{YYYY}/{YYYY_MM}/       ← extra year level
+├── Intake_GL-JE/{YYYY_MM}/
+├── Intake_Wires/{YYYY_MM}/
+└── Intake_Costing/{YYYY_MM}/  and  /071426/   ← one odd MMDDYY folder
+```
+
+Site: `fambrandsllc.sharepoint.com:/sites/Accounting_Research:`
+Drive: `b!MNl2melzSku5UeMBUY9PWOyLv-T4SmhAkW7yOrut5I8c6HMQ6ug8SKyMaAFI2eIV`
+
+Two consequences:
+
+- **The document type is decided by the folder, not the content.** A file in `Intake_Checks` is a
+  check. That is a far stronger signal than any content pattern, and it is not yet used — the
+  classifier currently works from filename and content only. Adding a `folderHints` signal is the
+  single highest-value improvement available.
+- **The scanner does not recurse.** Pointing it at `Intake_Wires` finds nothing, because the files
+  live in `Intake_Wires/2026_02`. Either configure one leaf folder at a time, or add recursion.
+
+### The documents are OCR'd scans, and the OCR is poor
+
+This is the finding that matters most. The PDFs carry a text layer, so the `NoTextLayer` gate does
+**not** catch them — but the text is degraded scan output, not clean digital text. From a real check:
+
+```
+3   8490                    ← check number split by a space
+t  11112026                 ← 1/1/2026, with the slashes read as 1s
+11512026                    ← 1/5/2026, same corruption
+Check:   0000038490         ← this line is clean
+MICHAEL RADOCHAY            ← payee is clean
+5,ooy0'                     ← amount is garbage
+```
+
+From a real GL journal: `6t30t2026` (slashes read as `t`), `I\4EDICAL` for `MEDICAL`,
+`'18,440.19` — but `G/L   Date:   6/30/2026` comes through clean.
+
+The existing malformed filenames in `Intake_Wires` are the fingerprints of an earlier
+regex-over-bad-OCR attempt: `Wire__$1,254,000.00_U-l I Sl-U-O.pdf`,
+`Wire__$963,164.00_32_12_2026.pdf` (32 is not a month), `Wire__322,43b.88_.pdf`, `Wire___.pdf`.
+
+**What this means for the design.** Patterns must anchor on the lines that survive OCR (`Check:`,
+`G/L Date:`) rather than the ones that do not (free-floating dates, amounts). The existing guards
+already do the right thing with the rest: an impossible date yields an empty value, a missing field
+becomes `MissingFields`, and a rendered name that fails its own `validate` regex is refused. So a
+bad extraction produces an exception, never a wrong rename — `32_12_2026` would be rejected today.
+The open question is not safety but **hit rate**, and only a dry run can measure it.
 
 ---
 
@@ -157,24 +212,28 @@ decides whether OCR needs revisiting.
 
 ---
 
-## Supplying the real rules
+## Confirming the rules
 
-Every rule set in `src/config/document-types/` currently has `"placeholder": true`. While any does,
-the worker refuses to rename regardless of `RENAME_DRY_RUN` — the shipped patterns are guesses at the
-convention and must not touch real files.
+Derived from real filenames on 2026-09-02. Each is still `"placeholder": true` pending confirmation.
+
+| Type | Convention | Example (real file) | Confidence |
+|---|---|---|---|
+| CHECK | `Check_{checkNumber}_{PAYEE}_{M}_{D}_{YYYY}.pdf` | `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf` | High on shape. Number and payee extract cleanly; **date is the weak field** — OCR mangles it. |
+| WIRE | `Wire__${amount}_{MM}_{DD}_{YYYY}.pdf` (note the **double** underscore) | `Wire__$18,593.28_02_03_2026.pdf` | High on shape. Amount keeps `$`, commas and cents. |
+| GLJE | `GLJE_{MM}_{DD}_{YYYY}_{jeNumber}.pdf` | `GLJE_06_30_2026_418627.pdf` | Shape high; **jeNumber unconfirmed** — the file ends `418627` but the document body reads `JE-000001`, so the trailing number likely comes from a batch or document id not yet located. |
+| COSTING | none | `Costing_01.pdf`, `costing_Image_001.pdf`, `Costing_Image02.pdf` | **No convention exists.** Inconsistent casing and underscores, and a bare sequence number carrying no document data. Shipped `"enabled": false`. |
+
+Note CHECK does **not** zero-pad its date (`1_5_2026`) while WIRE and GLJE do (`02_03_2026`). Both
+forms are supported via the `date:M_D_YYYY` and `date:MM_DD_YYYY` transforms.
 
 To go live:
 
-1. For each of CHECK, COSTING, GLJE, WIRE, replace `classify`, `fields`, `template`, and `validate`
-   with the real convention.
-2. Replace the fixtures in `test/fixtures/documents/` with real samples (one compliant, one not, per
-   type) and update the expected names in `src/shared/__tests__/document-pipeline.test.js`.
-3. Set `"placeholder": false`.
+1. Confirm the three conventions above, and say where the GLJE trailing number comes from.
+2. Define a COSTING convention, or leave that type disabled.
+3. Set `"placeholder": false` on each confirmed type.
 4. Update the "are all still placeholders" assertion in
    `src/shared/__tests__/document-type-rules.test.js`.
 5. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
-
----
 
 ## Deployment checklist
 

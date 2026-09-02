@@ -285,7 +285,7 @@ describe('document-rename-timer', () => {
             // Compliant against the real shipped GLJE convention, since runSweep
             // reads the repo rule sets rather than the fixtures above.
             listFolderFiles.mockResolvedValue({
-                files: [file({ name: 'GLJE_FAM_202608_12345.pdf' })], folderCount: 0, truncated: false
+                files: [file({ name: 'GLJE_06_30_2026_418627.pdf' })], folderCount: 0, truncated: false
             });
 
             const context = mockContext();
