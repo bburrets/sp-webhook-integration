@@ -136,6 +136,64 @@ module.exports = {
             + 'Repeat Code Nickname Send Date (MM/DDIYYYY) 02t1212026'
     },
 
+    WIRE_INTAKE_BELLDINI: {
+        expected: 'WIRE',
+        // Wire__$1,000,000.00_02_26_2026.pdf -- control number OCR'd as
+        // "164't00504", where 't is a substituted 1. Stripping noise loses a
+        // digit, so a 9-digit length check must refuse it.
+        text: '$ingtePo   in#  2126126, 10:57   AM  ACH Additional Services  '
+            + 'View Wire   Transfer   Detail  Fed   Wire   Transfer   (FED)  '
+            + "Control Number 164't00504 Template   lD  BELLDINI Debit   Account   Number   -   "
+            + 'Debit Account Name  1   53495863778   -   FAM LLC General Account '
+            + 'Amount $1,000,000.00  Creditor Agent lnformation  '
+            + 'Agent ABA (Routing   /   Transit Number) 122203950  '
+            + 'View Wire Transfer Detail   -   U.S. Bank   Commercial lnternet   Banking  '
+            + 'Repeat Code Nickname Send Date   (MM/DDryYYY)  0212612026'
+    },
+
+    WIRE_INTAKE_NINGBO: {
+        expected: 'WIRE',
+        // Wire___.pdf -- the filename carries nothing at all, yet the document
+        // has a clean control number and a clean amount.
+        text: '2111i26, 10:50   AIM  ACH Additional Services  '
+            + 'View Wire Transfer Detail   -   U.S. Bank Commercial   lnternet   Banking  '
+            + 'Creditor   lnformation  Name  NtNcBO   SEDUNO   l[,4pORT   AND   EXpORT  '
+            + 'View Wire   Transfer   Detail  lnternational   Wire   Transfer   (INTL-USD)  '
+            + 'Control Number  1637   12156 Template lD NINGBO SEDUN  '
+            + 'Debit   Account   Number   -   Debit   Account   Name 153495863778   -   '
+            + 'FAM LLC General Account USD   Amount  $284,811.03  '
+            + 'Greditor   Agent lnformation  SWIFT/   BIC   ID  BKCHCNBJ92A  '
+            + 'Repeat Code Nickname Send Date   (MM/DDI/YYY)  02111/2026'
+    },
+
+    WIRE_INTAKE_SINGAPORE: {
+        expected: 'WIRE',
+        // Wire__322,43b.88_.pdf -- the amount's decimal point was read as
+        // whitespace ("$322,436  88"), so stripping noise yields 322,43688.
+        text: '2126126,10:39   AM  ACH Additional Services  '
+            + 'View Wire Transfer Detail   -   U.S. Bank   Commercial lnternet   Banking  '
+            + 'View Wire   Transfer   Detail  lnternational   Wire   Transfer   (INTL-USD)  '
+            + 'Control Number 164098522 Template lD SINGAPORE   KE  '
+            + 'Deblt   Account   Number   -   Debit   Account   Name 153495863778   -   '
+            + 'FAM LLC General Account USD Amount $322,436   88  '
+            + 'C   reditor Agent lnformation  SWIFT   / BIC   ID UU   5U5b5U  '
+            + 'Repeat Code Nickname Send Date   (MM/DD^/YYY)  02t26t2026'
+    },
+
+    WIRE_INTAKE_JUNGKWANG: {
+        expected: 'WIRE',
+        // Wire____001.pdf -- clean control number and amount despite the
+        // useless filename.
+        text: 'SingloPointo  2111126,11:11   Alr/  ACH Additional   Services  '
+            + 'View Wire Transfer Detail   -   U.S. Bank Commercial   lnternet   Banking  '
+            + 'Control Number  1   63713348 Real-Time Payments Wire   Transfers  '
+            + 'View Wire   Transfer   Detail  lnternational   Wire   Transfer   (INTL-USD)  '
+            + 'Template   lD  JUNG KWANG Debit   Account   Number   -   Debit   Account   Name '
+            + '153495863778   -   FAM LLC General Account USD   Amount  $321,930.00  '
+            + 'C   reditor Agent lnformation  SWIFT   /   BIC   ID  SHBKKRSEXXX  '
+            + 'Repeat Code Nickname Send Date   (MM/DD^/rrY)  02111t2026'
+    },
+
     UNRELATED: {
         expected: null,
         text: 'Meeting notes from the quarterly planning session. Attendees: several people. '

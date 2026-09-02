@@ -96,20 +96,47 @@ describe('field recovery from corrupted OCR', () => {
         expect(missing.includes('amount') || !money.test(values.amount || '')).toBe(true);
     });
 
-    it('finds no PAR number in any 2026 intake wire', () => {
-        // The blocker. OutputBox names wires by PAR Number, but these documents
-        // carry only a Control Number. Pinned so that if the PAR Number pattern
+    /** Every 2026 intake wire sampled from Intake_Wires/2026_02. */
+    const INTAKE_WIRES = Object.keys(samples).filter((k) => k.startsWith('WIRE_INTAKE_'));
+
+    it('sampled seven real 2026 wires', () => {
+        expect(INTAKE_WIRES).toHaveLength(7);
+    });
+
+    it('finds no PAR number in any of them', () => {
+        // The blocker. OutputBox names wires by PAR Number, but not one 2026
+        // document carries that field. Pinned so that if the PAR Number pattern
         // is later relaxed to match something else, this fails loudly.
-        for (const key of ['WIRE_INTAKE_TTG', 'WIRE_INTAKE_CROWN', 'WIRE_INTAKE_COMPASS']) {
+        for (const key of INTAKE_WIRES) {
             const { missing } = extractFields(samples[key].text, getRuleSet('WIRE'));
             expect({ key, missing }).toEqual({ key, missing: expect.arrayContaining(['parNumber']) });
         }
     });
 
-    it('confirms those documents do carry a Control Number', () => {
-        for (const key of ['WIRE_INTAKE_TTG', 'WIRE_INTAKE_CROWN', 'WIRE_INTAKE_COMPASS']) {
-            expect(samples[key].text).toMatch(/Control\s+Number/i);
+    it('confirms all of them carry a Control Number instead', () => {
+        for (const key of INTAKE_WIRES) {
+            expect({ key, hasControlNumber: /Control\s+Number/i.test(samples[key].text) })
+                .toEqual({ key, hasControlNumber: true });
         }
+    });
+
+    it('recovers a control number split by injected whitespace', () => {
+        // "1637   12156" and "1   63713348" are single numbers OCR broke apart.
+        const pattern = /Control\s+Number\s+([0-9][0-9'\t ]{0,20}[0-9])/;
+        const digits = (key) => (samples[key].text.match(pattern) || [])[1]
+            ?.replace(/[^0-9]+/g, '');
+        expect(digits('WIRE_INTAKE_NINGBO')).toBe('163712156');
+        expect(digits('WIRE_INTAKE_JUNGKWANG')).toBe('163713348');
+    });
+
+    it('loses a digit when a control number has a substituted character', () => {
+        // "164't00504" is 164100504 with the 1 read as 't. Stripping noise
+        // yields 164, which a 9-digit length check refuses -- the reason a
+        // Control-Number convention would still flag this file rather than
+        // renaming it wrongly.
+        const pattern = /Control\s+Number\s+([0-9][0-9'\t ]{0,20}[0-9])/;
+        const captured = (samples.WIRE_INTAKE_BELLDINI.text.match(pattern) || [])[1];
+        expect(String(captured).replace(/[^0-9]+/g, '')).not.toHaveLength(9);
     });
 });
 
