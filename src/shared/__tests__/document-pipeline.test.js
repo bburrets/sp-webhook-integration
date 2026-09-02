@@ -108,23 +108,23 @@ describe('document pipeline over real PDFs', () => {
     });
 
     describe('OCR corruption', () => {
-        it('refuses a wire whose PAR number OCR mangled', () => {
-            // 251103B02FHR reads as "251'103802FH   R" -- the B becomes an 8. The
-            // validate regex requires a literal B in position 7, so this is refused
-            // rather than renamed to a confidently wrong bank reference. The live
-            // files WIRE_251125801YWH_... are that failure leaking through an
-            // earlier attempt that had no such guard.
+        it('refuses a wire whose reference OCR mangled', () => {
+            // The validate regex requires a literal B in position 7, so a
+            // reference read as 251103802FHR is refused rather than renamed to a
+            // confidently wrong bank reference. The live files
+            // WIRE_251125801YWH_... are that failure leaking through an earlier
+            // attempt that had no such guard.
             const result = buildProposedName({
                 fileName: 'x.pdf',
-                text: "PAR Number 251'103802FH   R  Repeat Code Nickname\nAmount $237,800.00\n",
+                text: 'SENDERS REFERENCE: 251103802FHR\nWIRE AMOUNT:237800.00\n',
                 ruleSet: getRuleSet('WIRE')
             });
             expect(result.ok).toBe(false);
         });
 
-        it('still extracts the amount, which survives OCR cleanly', () => {
+        it('still extracts the amount, which the detail page renders cleanly', () => {
             const { values } = extractFields(
-                "PAR Number 251'103802FH   R  Repeat Code\nAmount $237,800.00\n",
+                'SENDERS REFERENCE: 251103802FHR\nWIRE AMOUNT:237800.00\n',
                 getRuleSet('WIRE')
             );
             expect(values.amount).toBe('237,800.00');

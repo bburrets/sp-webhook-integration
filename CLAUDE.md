@@ -126,17 +126,17 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
   or point the sweep at `OutputBox` instead. Settle it before `RENAME_DRY_RUN=false`.
 - Graph write permission (`Sites.ReadWrite.All`) is **unverified** — see the checklist in the doc.
 
-**Dry run 2026-09-02 renamed nothing.** Classification was correct in every case (all `via: content`,
-folder fallback never needed) and checks/GL-JE were correctly skipped as already compliant. WIRE is
-blocked: **2026 wires carry no PAR Number**, only a Control Number (`163495473`, `163901832`,
-`163751217`), across both INTL-USD and FED types. The OutputBox convention keys wire names on the
-PAR Number, and `OutputBox/WIRE` has no 2026 folders, so these are unprocessed backlog with no
-output name to compare. Needs a business decision on what a 2026 wire should be named.
-
-Amounts ARE recovered now: a `numeric` transform strips the spaces/apostrophes OCR injects into
-figures (`$1 ,375,'1   1   0.00` → `1,375,110.00`), and the WIRE validate regex requires proper
-thousands grouping so a dropped digit (`$18,s93.28` → `18`) is refused rather than becoming a wrong
-figure.
+- **WIRE fields are on a LATER page, not page 1.** The PAR Number and a clean unformatted
+  `WIRE AMOUNT` live on the SinglePoint "Current Day Account Detail" page. `pdf-parse` reads every
+  page, so this works — but any manual investigation that reads only page 1 will wrongly conclude
+  the PAR Number is absent. That mistake was made once already.
+- **Read the reference from `SENDERS REFERENCE`, not the `PAR NUMBER` line.** Same value; OCR
+  corrupts the PAR NUMBER rendering (`260226801WYD`) and leaves SENDERS REFERENCE clean
+  (`260226B01WYD`). Read the amount from `WIRE AMOUNT` (clean, unformatted, + `thousands`
+  transform) rather than the mangled page-1 figure.
+- **Fed wires have no transaction-detail page at all**, so no PAR Number exists and they flag as
+  MissingFields. Open question: how should a Fed wire be named? International wires do rename —
+  verified: `Wire__322,43b.88_.pdf` → `WIRE_260226B01WYD_$322,436.88.pdf`.
 
 Full reference: `docs/document-rename-conventions.md`
 

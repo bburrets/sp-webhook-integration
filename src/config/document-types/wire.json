@@ -1,7 +1,7 @@
 {
     "type": "WIRE",
     "placeholder": false,
-    "_note": "Convention CONFIRMED by the business 2026-09-02, taken from OutputBox/WIRE/{YYYY_MM}/, which is the authoritative post-rename form: WIRE_{parNumber}_${amount}.pdf. This is NOT the form used in Shared Documents/Intake_Wires (Wire__$amount_MM_DD_YYYY) -- that is the pre-rename state. The PAR Number is a U.S. Bank SinglePoint wire reference, YYMMDD + B + 2 digits + 3 alphanumerics. OCR corrupts it systematically: 251103B02FHR reads as \"251'103802FH   R\" (B becomes 8). The validate regex REQUIRES a literal B in position 7, so a corrupted reference fails validation and lands on the exception path rather than producing a confidently wrong name -- the malformed live files WIRE_251125801YWH_... and WIRE_2511258020FR_... are that exact failure leaking through an earlier attempt.",
+    "_note": "Convention CONFIRMED by the business 2026-09-02, taken from OutputBox/WIRE/{YYYY_MM}/: WIRE_{parNumber}_${amount}.pdf. Both fields come from the SinglePoint 'Current Day Account Detail' page, which is NOT page 1 -- it appears later in the document, so the whole PDF must be parsed. INTERNATIONAL wires (INTL-USD) carry that page; FED wires appear NOT to, and so have no PAR Number at all -- those flag as MissingFields. The PAR NUMBER label itself OCRs badly (B read as 8), so the value is read from SENDERS REFERENCE, which carries the same reference cleanly. The validate regex requires a literal B in position 7 so a corrupted reference is refused rather than becoming a wrong bank reference.",
     "enabled": true,
     "extensions": [
         ".pdf"
@@ -23,20 +23,20 @@
     },
     "fields": {
         "parNumber": {
-            "pattern": "PAR\\s+Number\\s+(.+?)\\s+Repeat\\s+Code",
+            "pattern": "SENDERS\\s+REFERENCE:\\s*([A-Z0-9]{10,14})",
             "required": true,
             "transform": [
-                "upper",
-                "alnum"
+                "upper"
             ],
-            "maxLength": 12
+            "_note": "Read from SENDERS REFERENCE rather than the PAR NUMBER line. Both carry the same value on the SinglePoint transaction-detail page, but OCR corrupts the PAR NUMBER line and leaves SENDERS REFERENCE clean: 'PAR NUMBER: 260226801WYD' vs 'SENDERS REFERENCE: 260226B01WYD'. Matching the corrupted one would fail the validate regex's literal B and flag a file that is actually readable."
         },
         "amount": {
-            "pattern": "Amount\\s+\\$\\s*([0-9][0-9,.'\\t ]{0,58}[0-9])",
+            "pattern": "WIRE\\s+AMOUNT:\\s*([0-9]+\\.[0-9]{2})",
             "required": true,
             "transform": [
-                "numeric"
-            ]
+                "thousands"
+            ],
+            "_note": "Read from WIRE AMOUNT on the transaction-detail page, which is clean and unformatted, rather than the page-1 figure which OCR mangles ('$18,s93.28', '$322,436  88'). The thousands transform adds the grouping the convention requires."
         }
     },
     "template": "WIRE_{parNumber}_${amount}",

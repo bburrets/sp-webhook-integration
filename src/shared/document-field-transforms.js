@@ -91,7 +91,18 @@ const SIMPLE_TRANSFORMS = {
     // without altering a digit. It CANNOT repair a substituted digit -- "$18,s93.28"
     // becomes "18,93.28", which the per-type validate regex then rejects for
     // malformed thousands grouping rather than letting a wrong figure through.
-    numeric: (value) => value.replace(/[^0-9.,]+/g, '')
+    numeric: (value) => value.replace(/[^0-9.,]+/g, ''),
+    // Group a plain decimal into thousands: "18593.28" -> "18,593.28". Returns
+    // '' for anything that is not a well-formed figure, so a mangled value is
+    // reported missing rather than formatted into something plausible.
+    thousands: (value) => {
+        const cleaned = value.replace(/[^0-9.]+/g, '');
+        if (!/^\d+\.\d{2}$/.test(cleaned)) {
+            return '';
+        }
+        const [whole, cents] = cleaned.split('.');
+        return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${cents}`;
+    }
 };
 
 /**

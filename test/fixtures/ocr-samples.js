@@ -7,8 +7,12 @@
  * asserted -- particularly the question of whether content alone can identify a
  * document type without help from the folder it sits in.
  *
- * Truncated to the first portion of page 1 in each case, which is what carries
- * the identifying markers.
+ * COVERAGE WARNING. Samples marked `pagesRead: 1` contain page 1 only. For
+ * wires that is NOT enough: the PAR Number and the clean WIRE AMOUNT live on the
+ * SinglePoint "Current Day Account Detail" page, which appears LATER in the
+ * document. pdf-parse reads every page in production, so a page-1-only fixture
+ * will under-report what the sweep can actually extract. Do not treat a failure
+ * on one of those as evidence the real file cannot be renamed.
  */
 
 module.exports = {
@@ -93,6 +97,7 @@ module.exports = {
     // which is why the OutputBox WIRE convention cannot be derived from them.
 
     WIRE_INTAKE_TTG: {
+        coverage: 'detail page included',
         expected: 'WIRE',
         // Shared Documents/Intake_Wires/2026_02/Wire__$18,593.28_02_03_2026.pdf
         text: 'SingtoPointo  ztstz\\,   y:lg   et\'t  ACH Origination Account Validation  '
@@ -104,9 +109,19 @@ module.exports = {
             + 'Creditor Agent lnformation  SWIFT/   BIC   ID  HSBCHKHHHKH  '
             + 'Creditor lnformation  Name TTG GROUP LIMITED  '
             + 'Remittance   lnformation |NVO|CE   NO.250169-3'
+            // --- page 2: the SinglePoint transaction-detail page ---
+            + '  Current   Day   Account   Detail FAM LLC SinglePoint  '
+            + 'Transaction   Detail   For   0210312026  PAR NUMBER: 260203801 PRL  '
+            + 'DATE/TIME   COMPLETED :   0210312026   01   :44:08   PM  '
+            + 'SEND   DATE:   FEBRUARY   03,2026  VALUE   DATE: FEBRUARY   03,2026  '
+            + 'WIRE CURRENCY:   USD WIRE   AMOUNT:   18593.28 '
+            + 'SENDERS   REFERENCE:   260203B01PR1 '
+            + 'INSTRUCTED   AGENT:   IVIRMDUS33XXXX HSBC   BANK   USA, N.A. '
+            + 'SOURCE:   EMMSPT   CONTROL NUMBER: 163495473'
     },
 
     WIRE_INTAKE_CROWN: {
+        coverage: 'page 1 only',
         expected: 'WIRE',
         // Shared Documents/Intake_Wires/2026_02/Wire__$1,375,110.00_.pdf
         text: '$inglePol   nto  2119126,   10:29   AM  ACH Origination Account Validation  '
@@ -120,6 +135,7 @@ module.exports = {
     },
 
     WIRE_INTAKE_COMPASS: {
+        coverage: 'page 1 only',
         expected: 'WIRE',
         // Shared Documents/Intake_Wires/2026_02/Wire__$963,164.00_32_12_2026.pdf
         // A Fed wire rather than international, and note the filename's "32"
@@ -137,10 +153,12 @@ module.exports = {
     },
 
     WIRE_INTAKE_BELLDINI: {
+        coverage: 'detail page included',
         expected: 'WIRE',
-        // Wire__$1,000,000.00_02_26_2026.pdf -- control number OCR'd as
-        // "164't00504", where 't is a substituted 1. Stripping noise loses a
-        // digit, so a 9-digit length check must refuse it.
+        // Wire__$1,000,000.00_02_26_2026.pdf -- a FED wire. Its later pages are
+        // the vendor's own invoices, with no SinglePoint transaction-detail
+        // page and therefore no PAR Number anywhere in the document. Control
+        // number OCR'd as "164't00504", where 't is a substituted 1.
         text: '$ingtePo   in#  2126126, 10:57   AM  ACH Additional Services  '
             + 'View Wire   Transfer   Detail  Fed   Wire   Transfer   (FED)  '
             + "Control Number 164't00504 Template   lD  BELLDINI Debit   Account   Number   -   "
@@ -152,6 +170,7 @@ module.exports = {
     },
 
     WIRE_INTAKE_NINGBO: {
+        coverage: 'page 1 only',
         expected: 'WIRE',
         // Wire___.pdf -- the filename carries nothing at all, yet the document
         // has a clean control number and a clean amount.
@@ -167,6 +186,7 @@ module.exports = {
     },
 
     WIRE_INTAKE_SINGAPORE: {
+        coverage: 'detail page included',
         expected: 'WIRE',
         // Wire__322,43b.88_.pdf -- the amount's decimal point was read as
         // whitespace ("$322,436  88"), so stripping noise yields 322,43688.
@@ -178,9 +198,19 @@ module.exports = {
             + 'FAM LLC General Account USD Amount $322,436   88  '
             + 'C   reditor Agent lnformation  SWIFT   / BIC   ID UU   5U5b5U  '
             + 'Repeat Code Nickname Send Date   (MM/DD^/YYY)  02t26t2026'
+            // --- page 2: the SinglePoint transaction-detail page ---
+            + '  Current   Day   Account   Detail FAM LLC  SinglePoint  '
+            + 'Transaction   Detail   For   0212612026  PAR NUMBER:   260226801WYD '
+            + 'DATEff   I   ME COMPLETED :   Q212612026   01   :42:30 PM '
+            + 'SEND DATE:   FEBRUARY 26,2026 VALUE   DATE: FEBRUARY   26,2026  '
+            + 'WIRE CURRENCY:   USD WIRE   AMOUNT:322436.88 '
+            + 'SENDERS   REFERENCE:   260226B01WYD  '
+            + 'INSTRUCTED   AGENT:   PNBPUS3NXNYC   WELLS FARGO BANK,   NATIONAL '
+            + 'SOURCE:   EMMSPT CONTROL   NUMBER: 164098522'
     },
 
     WIRE_INTAKE_JUNGKWANG: {
+        coverage: 'page 1 only',
         expected: 'WIRE',
         // Wire____001.pdf -- clean control number and amount despite the
         // useless filename.

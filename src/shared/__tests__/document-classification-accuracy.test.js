@@ -68,75 +68,74 @@ describe('classification from content alone', () => {
 });
 
 describe('field recovery from corrupted OCR', () => {
-    const { extractFields } = require('../document-naming-engine');
+    const { extractFields, buildProposedName } = require('../document-naming-engine');
     const { getRuleSet } = require('../document-type-rules');
 
-    // Truth values taken from the filenames these documents already carry.
-    const AMOUNTS = {
-        WIRE: '237,800.00',
-        WIRE_INTAKE_CROWN: '1,375,110.00',
-        WIRE_INTAKE_COMPASS: '963,164.00'
+    // Wires whose fixture includes the SinglePoint transaction-detail page.
+    // That page is NOT page 1, and it carries both the PAR Number and a clean
+    // unformatted WIRE AMOUNT. pdf-parse reads every page in production; the
+    // page-1-only fixtures below cannot show what is really extractable.
+    const WITH_DETAIL_PAGE = {
+        WIRE_INTAKE_TTG: 'WIRE_260203B01PR1_$18,593.28.pdf',
+        WIRE_INTAKE_SINGAPORE: 'WIRE_260226B01WYD_$322,436.88.pdf'
     };
 
-    it.each(Object.entries(AMOUNTS))('recovers the amount from %s', (key, expected) => {
-        // OCR injects spaces and apostrophes into figures: "$1 ,375,'1   1   0.00"
-        // and "$963,1   64.00". The numeric transform strips that noise without
-        // touching a digit.
-        const { values } = extractFields(samples[key].text, getRuleSet('WIRE'));
-        expect({ key, amount: values.amount }).toEqual({ key, amount: expected });
+    it.each(Object.entries(WITH_DETAIL_PAGE))('renames %s from its detail page', (key, expected) => {
+        const result = buildProposedName({
+            fileName: 'whatever.pdf',
+            text: samples[key].text,
+            ruleSet: getRuleSet('WIRE')
+        });
+        expect({ key, name: result.name }).toEqual({ key, name: expected });
     });
 
-    it('refuses an amount with a substituted digit rather than guessing', () => {
-        // "$18,s93.28" is 18,593.28 with the 5 read as an s. The 5 is simply
-        // gone, so the capture yields "18", which fails the thousands-grouping
-        // check in the validate regex. A wrong figure in a filename would be
-        // worse than an exception.
-        const { values, missing } = extractFields(samples.WIRE_INTAKE_TTG.text, getRuleSet('WIRE'));
-        const money = /^\d{1,3}(?:,\d{3})*\.\d{2}$/;
-        expect(missing.includes('amount') || !money.test(values.amount || '')).toBe(true);
+    it('reads the PAR reference from SENDERS REFERENCE, not the PAR NUMBER line', () => {
+        // Both carry the same value, but OCR corrupts the PAR NUMBER line and
+        // leaves SENDERS REFERENCE clean:
+        //   PAR NUMBER:        260226801WYD   <- B read as 8
+        //   SENDERS REFERENCE: 260226B01WYD   <- intact
+        // Matching the corrupted one would flag a file that is readable.
+        expect(samples.WIRE_INTAKE_SINGAPORE.text).toMatch(/PAR NUMBER:\s*260226801WYD/);
+        const { values } = extractFields(samples.WIRE_INTAKE_SINGAPORE.text, getRuleSet('WIRE'));
+        expect(values.parNumber).toBe('260226B01WYD');
     });
 
-    /** Every 2026 intake wire sampled from Intake_Wires/2026_02. */
-    const INTAKE_WIRES = Object.keys(samples).filter((k) => k.startsWith('WIRE_INTAKE_'));
-
-    it('sampled seven real 2026 wires', () => {
-        expect(INTAKE_WIRES).toHaveLength(7);
+    it('recovers an amount page 1 had destroyed', () => {
+        // Page 1 renders this as "$322,436   88" -- the decimal point read as
+        // whitespace, unrecoverable. The detail page has "WIRE AMOUNT:322436.88".
+        expect(samples.WIRE_INTAKE_SINGAPORE.text).toMatch(/\$322,436\s{2,}88/);
+        const { values } = extractFields(samples.WIRE_INTAKE_SINGAPORE.text, getRuleSet('WIRE'));
+        expect(values.amount).toBe('322,436.88');
     });
 
-    it('finds no PAR number in any of them', () => {
-        // The blocker. OutputBox names wires by PAR Number, but not one 2026
-        // document carries that field. Pinned so that if the PAR Number pattern
-        // is later relaxed to match something else, this fails loudly.
-        for (const key of INTAKE_WIRES) {
-            const { missing } = extractFields(samples[key].text, getRuleSet('WIRE'));
-            expect({ key, missing }).toEqual({ key, missing: expect.arrayContaining(['parNumber']) });
-        }
+    it('flags a Fed wire, which has no transaction-detail page at all', () => {
+        // Read pages 1-4 of this document: the later pages are the vendor's own
+        // invoices. Fed wires carry no PAR Number, so they cannot satisfy the
+        // convention and correctly land on the exception path.
+        const { missing } = extractFields(samples.WIRE_INTAKE_BELLDINI.text, getRuleSet('WIRE'));
+        expect(missing).toContain('parNumber');
     });
 
-    it('confirms all of them carry a Control Number instead', () => {
-        for (const key of INTAKE_WIRES) {
-            expect({ key, hasControlNumber: /Control\s+Number/i.test(samples[key].text) })
-                .toEqual({ key, hasControlNumber: true });
-        }
+    it('formats a plain figure into the grouping the convention needs', () => {
+        const { applyTransform } = require('../document-field-transforms');
+        expect(applyTransform('thousands', '18593.28')).toBe('18,593.28');
+        expect(applyTransform('thousands', '1000000.00')).toBe('1,000,000.00');
+        // Refuses anything that is not a well-formed figure.
+        expect(applyTransform('thousands', '18,93')).toBe('');
     });
 
-    it('recovers a control number split by injected whitespace', () => {
-        // "1637   12156" and "1   63713348" are single numbers OCR broke apart.
-        const pattern = /Control\s+Number\s+([0-9][0-9'\t ]{0,20}[0-9])/;
-        const digits = (key) => (samples[key].text.match(pattern) || [])[1]
-            ?.replace(/[^0-9]+/g, '');
-        expect(digits('WIRE_INTAKE_NINGBO')).toBe('163712156');
-        expect(digits('WIRE_INTAKE_JUNGKWANG')).toBe('163713348');
-    });
-
-    it('loses a digit when a control number has a substituted character', () => {
-        // "164't00504" is 164100504 with the 1 read as 't. Stripping noise
-        // yields 164, which a 9-digit length check refuses -- the reason a
-        // Control-Number convention would still flag this file rather than
-        // renaming it wrongly.
-        const pattern = /Control\s+Number\s+([0-9][0-9'\t ]{0,20}[0-9])/;
-        const captured = (samples.WIRE_INTAKE_BELLDINI.text.match(pattern) || [])[1];
-        expect(String(captured).replace(/[^0-9]+/g, '')).not.toHaveLength(9);
+    it('leaves page-1-only fixtures documented as incomplete', () => {
+        // Guard against someone reading a failure on these as proof the real
+        // file cannot be renamed. They simply lack the detail page.
+        const pageOneOnly = Object.keys(samples)
+            .filter((k) => k.startsWith('WIRE_INTAKE_'))
+            .filter((k) => samples[k].coverage === 'page 1 only');
+        expect(pageOneOnly).toEqual([
+            'WIRE_INTAKE_CROWN',
+            'WIRE_INTAKE_COMPASS',
+            'WIRE_INTAKE_NINGBO',
+            'WIRE_INTAKE_JUNGKWANG'
+        ]);
     });
 });
 
