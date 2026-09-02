@@ -67,6 +67,52 @@ describe('classification from content alone', () => {
     });
 });
 
+describe('field recovery from corrupted OCR', () => {
+    const { extractFields } = require('../document-naming-engine');
+    const { getRuleSet } = require('../document-type-rules');
+
+    // Truth values taken from the filenames these documents already carry.
+    const AMOUNTS = {
+        WIRE: '237,800.00',
+        WIRE_INTAKE_CROWN: '1,375,110.00',
+        WIRE_INTAKE_COMPASS: '963,164.00'
+    };
+
+    it.each(Object.entries(AMOUNTS))('recovers the amount from %s', (key, expected) => {
+        // OCR injects spaces and apostrophes into figures: "$1 ,375,'1   1   0.00"
+        // and "$963,1   64.00". The numeric transform strips that noise without
+        // touching a digit.
+        const { values } = extractFields(samples[key].text, getRuleSet('WIRE'));
+        expect({ key, amount: values.amount }).toEqual({ key, amount: expected });
+    });
+
+    it('refuses an amount with a substituted digit rather than guessing', () => {
+        // "$18,s93.28" is 18,593.28 with the 5 read as an s. The 5 is simply
+        // gone, so the capture yields "18", which fails the thousands-grouping
+        // check in the validate regex. A wrong figure in a filename would be
+        // worse than an exception.
+        const { values, missing } = extractFields(samples.WIRE_INTAKE_TTG.text, getRuleSet('WIRE'));
+        const money = /^\d{1,3}(?:,\d{3})*\.\d{2}$/;
+        expect(missing.includes('amount') || !money.test(values.amount || '')).toBe(true);
+    });
+
+    it('finds no PAR number in any 2026 intake wire', () => {
+        // The blocker. OutputBox names wires by PAR Number, but these documents
+        // carry only a Control Number. Pinned so that if the PAR Number pattern
+        // is later relaxed to match something else, this fails loudly.
+        for (const key of ['WIRE_INTAKE_TTG', 'WIRE_INTAKE_CROWN', 'WIRE_INTAKE_COMPASS']) {
+            const { missing } = extractFields(samples[key].text, getRuleSet('WIRE'));
+            expect({ key, missing }).toEqual({ key, missing: expect.arrayContaining(['parNumber']) });
+        }
+    });
+
+    it('confirms those documents do carry a Control Number', () => {
+        for (const key of ['WIRE_INTAKE_TTG', 'WIRE_INTAKE_CROWN', 'WIRE_INTAKE_COMPASS']) {
+            expect(samples[key].text).toMatch(/Control\s+Number/i);
+        }
+    });
+});
+
 describe('content outranks the folder', () => {
     /** Classify with the file deliberately filed under the wrong type. */
     function misfiled(text, folderPath) {

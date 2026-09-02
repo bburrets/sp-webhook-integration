@@ -85,7 +85,13 @@ const SIMPLE_TRANSFORMS = {
     alnum: (value) => value.replace(/[^A-Za-z0-9]+/g, ''),
     // Collapse internal whitespace runs to a single hyphen, preserving word
     // boundaries where alnum would fuse them together.
-    collapse: (value) => value.trim().replace(/\s+/g, '-')
+    collapse: (value) => value.trim().replace(/\s+/g, '-'),
+    // Keep only what can legitimately appear in a figure. OCR injects spaces and
+    // apostrophes into amounts ("$1 ,375,'1   1   0.00"); this removes that noise
+    // without altering a digit. It CANNOT repair a substituted digit -- "$18,s93.28"
+    // becomes "18,93.28", which the per-type validate regex then rejects for
+    // malformed thousands grouping rather than letting a wrong figure through.
+    numeric: (value) => value.replace(/[^0-9.,]+/g, '')
 };
 
 /**

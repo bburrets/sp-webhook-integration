@@ -87,6 +87,55 @@ module.exports = {
             + 'FABRIC   FROM  cvrflNc   FROM  sEwlNG   FRoM  MANUTACTURET   N   ME   A]ID ADORISS'
     },
 
+
+    // --- Intake_Wires/2026_02, the folder the sweep would actually target ---
+    // None of these carry a PAR Number. They have a Control Number instead,
+    // which is why the OutputBox WIRE convention cannot be derived from them.
+
+    WIRE_INTAKE_TTG: {
+        expected: 'WIRE',
+        // Shared Documents/Intake_Wires/2026_02/Wire__$18,593.28_02_03_2026.pdf
+        text: 'SingtoPointo  ztstz\\,   y:lg   et\'t  ACH Origination Account Validation  '
+            + 'Wire Transfers  lnitiate Wire Transfer  View Wire Transfer Detail   -   U.S. Bank '
+            + 'Commercial   Internet Banking  Repeat Code Nickname Send Date   (MM/DD^/YY/)  '
+            + '0210312026  lnternational Wire Transfer   (INTL-USD)  Control Number  1   63495473 '
+            + 'Template lD TTG GROUP Debit   Account   Number   -   Debit Account Name '
+            + '153495863778   -   FAM LLC General Account USD Amount $18,s93.28  '
+            + 'Creditor Agent lnformation  SWIFT/   BIC   ID  HSBCHKHHHKH  '
+            + 'Creditor lnformation  Name TTG GROUP LIMITED  '
+            + 'Remittance   lnformation |NVO|CE   NO.250169-3'
+    },
+
+    WIRE_INTAKE_CROWN: {
+        expected: 'WIRE',
+        // Shared Documents/Intake_Wires/2026_02/Wire__$1,375,110.00_.pdf
+        text: '$inglePol   nto  2119126,   10:29   AM  ACH Origination Account Validation  '
+            + 'Wire Transfers  lnitiate Wire Transfer  View Wire Transfer Detail   -   U.S. Bank  '
+            + 'Commercial   lnternet   Banking  Debit   Account   Number   -   Debit   Account   '
+            + 'Name 153495863778   -   FAM LLC General Account USD   Amount  $1 ,375,\'1   1   0.00  '
+            + 'Creditor Agent lnformation  SWIFT   / BIC   ID  SCBKHKHH  '
+            + 'Creditor lnformation  Name CROWN   WISE   INTERNATIONAL   INDUSTRIAL  '
+            + 'Repeat Code Nickname  send   Date (MM/DD/YYYY) 02119t2026  '
+            + 'tnternational   Wire   Transfer   (INTL-USD)  Control Number  1   6390   1   832'
+    },
+
+    WIRE_INTAKE_COMPASS: {
+        expected: 'WIRE',
+        // Shared Documents/Intake_Wires/2026_02/Wire__$963,164.00_32_12_2026.pdf
+        // A Fed wire rather than international, and note the filename's "32"
+        // month -- an OCR artefact from the earlier attempt.
+        text: '2112126,10:50   AM  ACH Additional   Services  Wire   Transfers  '
+            + 'lnitiate Wire Transfer  View Wire Transfer Detail   -   U.S. Bank   '
+            + 'Commercial lnternet   Banking  View Wire   Transfer   Detail  '
+            + 'Fed   Wire   Transfer   (FED)  Control Number 163751217 Template lD  '
+            + 'COIV,IPASS   APPA Debit   Account   Number   -   Debit   Account   Name  '
+            + '1   53495863778   -   FAM LLC General Account Amount  $963,1   64.00  '
+            + 'Creditor Agent lnformation  Agent ABA (Routing   /   Transit Number) 322271627  '
+            + 'Creditor lnformation  Name COI,lPASS APPAREL INC  '
+            + 'Remittance   lnformation |NVO|CE   NO. 8891-878,   876, 901,  '
+            + 'Repeat Code Nickname Send Date (MM/DDIYYYY) 02t1212026'
+    },
+
     UNRELATED: {
         expected: null,
         text: 'Meeting notes from the quarterly planning session. Attendees: several people. '

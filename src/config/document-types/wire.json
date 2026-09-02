@@ -32,13 +32,13 @@
             "maxLength": 12
         },
         "amount": {
-            "pattern": "Amount\\s+\\$\\s*([\\d,]+\\.\\d{2})",
+            "pattern": "Amount\\s+\\$\\s*([0-9][0-9,.'\\t ]{0,58}[0-9])",
             "required": true,
             "transform": [
-                "trim"
+                "numeric"
             ]
         }
     },
     "template": "WIRE_{parNumber}_${amount}",
-    "validate": "^WIRE_\\d{6}B\\d{2}[A-Z0-9]{3}_\\$[\\d,]+\\.\\d{2}\\.pdf$"
+    "validate": "^WIRE_\\d{6}B\\d{2}[A-Z0-9]{3}_\\$\\d{1,3}(?:,\\d{3})*\\.\\d{2}\\.pdf$"
 }
