@@ -76,12 +76,21 @@ function validateFields(raw, problems) {
 
         // A field is either read out of the document or minted at rename time.
         const isGenerated = spec.generate !== undefined;
+        const rawPatterns = spec.patterns !== undefined
+            ? spec.patterns
+            : (spec.pattern !== undefined ? [spec.pattern] : []);
 
-        if (isGenerated && spec.pattern !== undefined) {
-            problems.push(`fields.${name} cannot declare both "pattern" and "generate"`);
+        if (isGenerated && rawPatterns.length > 0) {
+            problems.push(`fields.${name} cannot declare both a pattern and "generate"`);
+        }
+        if (spec.pattern !== undefined && spec.patterns !== undefined) {
+            problems.push(`fields.${name} cannot declare both "pattern" and "patterns"`);
+        }
+        if (spec.patterns !== undefined && !Array.isArray(spec.patterns)) {
+            problems.push(`fields.${name}.patterns must be an array`);
         }
 
-        let regex = null;
+        let regexes = [];
         if (isGenerated) {
             if (!isKnownGenerator(spec.generate)) {
                 problems.push(`fields.${name}.generate is not a known generator: "${spec.generate}"`);
@@ -93,13 +102,23 @@ function validateFields(raw, problems) {
                 // A generated value is always producible, so optional is meaningless.
                 problems.push(`fields.${name} is generated, so it cannot be optional`);
             }
+        } else if (rawPatterns.length === 0) {
+            problems.push(`fields.${name} must declare "pattern", "patterns" or "generate"`);
         } else {
             // Case-insensitive: source documents vary in capitalisation between
             // vendors and systems, and no pattern here depends on case to match.
-            regex = compilePattern(spec.pattern, `fields.${name}.pattern`, problems, 'i');
-            if (regex && regex.source.indexOf('(') === -1) {
-                problems.push(`fields.${name}.pattern must contain a capture group`);
-            }
+            rawPatterns.forEach((pattern, index) => {
+                const label = spec.patterns !== undefined
+                    ? `fields.${name}.patterns[${index}]`
+                    : `fields.${name}.pattern`;
+                const compiled = compilePattern(pattern, label, problems, 'i');
+                if (compiled) {
+                    if (compiled.source.indexOf('(') === -1) {
+                        problems.push(`${label} must contain a capture group`);
+                    }
+                    regexes.push(compiled);
+                }
+            });
         }
 
         const transform = spec.transform === undefined ? [] : spec.transform;
@@ -129,8 +148,10 @@ function validateFields(raw, problems) {
 
         fields[name] = {
             name,
-            pattern: spec.pattern,
-            regex,
+            patterns: rawPatterns,
+            regexes,
+            // First regex, for callers that only ever need one.
+            regex: regexes[0] || null,
             generate: isGenerated ? spec.generate : null,
             length: isGenerated ? spec.length : null,
             required: isGenerated ? true : required !== false,

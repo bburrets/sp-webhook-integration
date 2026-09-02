@@ -139,6 +139,7 @@ pattern or an unresolvable template placeholder throws rather than producing a w
 | `classify.contentPatterns` | Regexes matched against extracted text, case-insensitive. Each hit counts as one signal and is weighted **2×** a filename hit. |
 | `classify.minMatches` | Minimum signals for the type to be considered at all. |
 | `fields.<name>.pattern` | Case-insensitive regex; **capture group 1** is the value. |
+| `fields.<name>.patterns` | Array of regexes tried in order; the first with a capture wins. Use when the same field sits in different places in different document variants. Mutually exclusive with `pattern`. |
 | `fields.<name>.generate` | Mint the value instead of reading it. Currently only `"digits"`. Mutually exclusive with `pattern`, and cannot be optional. |
 | `fields.<name>.length` | Digit count, required when `generate` is set. |
 | `fields.<name>.required` | Default `true`. An optional field must declare a `default`. |
@@ -339,7 +340,7 @@ confirmation.
 | Type | Convention | Example (real file) | Confidence |
 |---|---|---|---|
 | CHECK | `Check_{number}_{PAYEE}_{M}_{D}_{YYYY}.pdf` | `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf` | **Extracts end to end today.** Note `Check` is title case and the date is **not** zero-padded. |
-| WIRE | `WIRE_{parNumber}_${amount}.pdf` | `WIRE_251103B02FHR_$237,800.00.pdf` | **International wires extract end to end.** Both fields come from the transaction-detail page, which is not page 1. `WIRE` is uppercase, single underscore, no date — the reference encodes it (`251103` = 2025-11-03). **Fed wires have no such page and flag** — see the correction below. |
+| WIRE | `WIRE_{parNumber}_${amount}.pdf` | `WIRE_251103B02FHR_$237,800.00.pdf` | **Extracts end to end, Fed and international alike.** The reference comes from the transaction-detail page, which is not page 1 and can be the last page. `WIRE` is uppercase, single underscore, no date — the reference encodes it (`251103` = 2025-11-03). |
 | GLJE | `GLJE_{MM}_{DD}_{YYYY}_{6 digits}.pdf` | `GLJE_11_03_2025_129334.pdf` | **Extracts end to end today.** The G/L date comes from the document; the trailing 6 digits are **randomly generated** (confirmed 2026-09-02), so the name is not reproducible between runs. |
 | COSTING | `{Vendor} -  {InvoiceNumber}.pdf` (separator is space-hyphen-**space-space**) | `MOLAX TRADING LIMITED -  BIM-26-006.pdf` | **Blocked, ships disabled.** The invoice number extracts reliably; the vendor name does not. See below. |
 
@@ -390,11 +391,32 @@ Verified end to end on the two wires whose detail page was read:
 | `Wire__$18,593.28_02_03_2026.pdf` | `WIRE_260203B01PR1_$18,593.28.pdf` |
 | `Wire__322,43b.88_.pdf` | `WIRE_260226B01WYD_$322,436.88.pdf` |
 
-**Fed wires are the genuine exception.** `Wire__$1,000,000.00_02_26_2026.pdf` is a
-`Fed Wire Transfer (FED)`; pages 2-4 are the vendor's own invoices and there is no
-transaction-detail page anywhere in it, so no PAR Number exists. Fed wires cannot satisfy this
-convention and flag as `MissingFields`. **How should a Fed wire be named?** That is the only open
-WIRE question -- far narrower than "all 2026 wires".
+**Fed wires rename too.** An earlier note here said they had no transaction-detail page. That was
+the same page-1 mistake made twice: on the Fed wire examined the detail page is the **last** page,
+page 7 of 7, with pages 2-6 being the vendor's own invoices. It carries the reference normally:
+
+```
+PAR NUMBER:   260226801   WPY
+SENDERS   REFERENCE:   260226B01   WPY
+IMAD:   2026022611   Q73AGC00431   1
+CONTROL NUMBER;   164100504
+```
+
+Fed and international wires differ only in two details, both handled:
+
+- **The reference is split by whitespace** on Fed pages (`260226B01   WPY`). The pattern matches
+  twelve alphanumerics with optional gaps and the `alnum` transform closes them.
+- **Fed detail pages have no `WIRE AMOUNT` line**, so the amount falls back to the page-1 figure.
+  The `amount` field declares two `patterns`, tried in order, and the clean detail-page value wins
+  when both are present.
+
+| Current filename | Wire type | Renames to |
+|---|---|---|
+| `Wire__$18,593.28_02_03_2026.pdf` | INTL-USD | `WIRE_260203B01PR1_$18,593.28.pdf` |
+| `Wire__322,43b.88_.pdf` | INTL-USD | `WIRE_260226B01WYD_$322,436.88.pdf` |
+| `Wire__$1,000,000.00_02_26_2026.pdf` | FED | `WIRE_260226B01WPY_$1,000,000.00.pdf` |
+
+**There is no remaining open question for WIRE.**
 
 A real hit rate needs the deployed sweep, since measuring properly means parsing every page of every
 file. Fixtures in `test/fixtures/ocr-samples.js` are tagged with their page coverage, and four are

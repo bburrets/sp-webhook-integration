@@ -77,7 +77,9 @@ describe('field recovery from corrupted OCR', () => {
     // page-1-only fixtures below cannot show what is really extractable.
     const WITH_DETAIL_PAGE = {
         WIRE_INTAKE_TTG: 'WIRE_260203B01PR1_$18,593.28.pdf',
-        WIRE_INTAKE_SINGAPORE: 'WIRE_260226B01WYD_$322,436.88.pdf'
+        WIRE_INTAKE_SINGAPORE: 'WIRE_260226B01WYD_$322,436.88.pdf',
+        // A Fed wire. Its detail page is the LAST page, not page 2.
+        WIRE_INTAKE_BELLDINI: 'WIRE_260226B01WPY_$1,000,000.00.pdf'
     };
 
     it.each(Object.entries(WITH_DETAIL_PAGE))('renames %s from its detail page', (key, expected) => {
@@ -108,12 +110,29 @@ describe('field recovery from corrupted OCR', () => {
         expect(values.amount).toBe('322,436.88');
     });
 
-    it('flags a Fed wire, which has no transaction-detail page at all', () => {
-        // Read pages 1-4 of this document: the later pages are the vendor's own
-        // invoices. Fed wires carry no PAR Number, so they cannot satisfy the
-        // convention and correctly land on the exception path.
-        const { missing } = extractFields(samples.WIRE_INTAKE_BELLDINI.text, getRuleSet('WIRE'));
-        expect(missing).toContain('parNumber');
+    it('reads a Fed reference that OCR split with whitespace', () => {
+        // Fed detail pages render it as "260226B01   WPY". Twelve alphanumerics
+        // with optional whitespace between them, then alnum removes the gaps.
+        expect(samples.WIRE_INTAKE_BELLDINI.text).toMatch(/SENDERS\s+REFERENCE:\s*260226B01\s+WPY/);
+        const { values } = extractFields(samples.WIRE_INTAKE_BELLDINI.text, getRuleSet('WIRE'));
+        expect(values.parNumber).toBe('260226B01WPY');
+    });
+
+    it('falls back to the page-1 amount for a Fed wire', () => {
+        // Fed detail pages carry no WIRE AMOUNT line, so the second pattern in
+        // the field's list supplies it.
+        expect(samples.WIRE_INTAKE_BELLDINI.text).not.toMatch(/WIRE\s+AMOUNT:/);
+        const { values } = extractFields(samples.WIRE_INTAKE_BELLDINI.text, getRuleSet('WIRE'));
+        expect(values.amount).toBe('1,000,000.00');
+    });
+
+    it('prefers the detail-page amount when both sources are present', () => {
+        // International wires have both; the clean unformatted one must win.
+        const { values } = extractFields(
+            'SENDERS REFERENCE: 260226B01WYD\nAmount $999,999.99\nWIRE AMOUNT:322436.88\n',
+            getRuleSet('WIRE')
+        );
+        expect(values.amount).toBe('322,436.88');
     });
 
     it('formats a plain figure into the grouping the convention needs', () => {

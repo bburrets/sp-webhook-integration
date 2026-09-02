@@ -134,9 +134,14 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
   corrupts the PAR NUMBER rendering (`260226801WYD`) and leaves SENDERS REFERENCE clean
   (`260226B01WYD`). Read the amount from `WIRE AMOUNT` (clean, unformatted, + `thousands`
   transform) rather than the mangled page-1 figure.
-- **Fed wires have no transaction-detail page at all**, so no PAR Number exists and they flag as
-  MissingFields. Open question: how should a Fed wire be named? International wires do rename —
-  verified: `Wire__322,43b.88_.pdf` → `WIRE_260226B01WYD_$322,436.88.pdf`.
+- **Fed wires rename too.** Their detail page is the LAST page (7 of 7 on the one examined), with
+  pages 2-6 being vendor invoices. They differ only in that the reference is whitespace-split
+  (`260226B01   WPY`) and there is no `WIRE AMOUNT` line, so the amount falls back to page 1 — the
+  `amount` field declares two `patterns`, tried in order. Verified:
+  `Wire__$1,000,000.00_02_26_2026.pdf` → `WIRE_260226B01WPY_$1,000,000.00.pdf`.
+  **No open questions remain for WIRE.**
+- A field may declare `patterns` (array, first match wins) instead of `pattern`, for values that sit
+  in different places in different document variants.
 
 Full reference: `docs/document-rename-conventions.md`
 

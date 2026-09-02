@@ -159,13 +159,38 @@ describe('document-type-rules', () => {
 
         it('rejects a field that is both extracted and generated', () => {
             expect(() => validateRuleSet(generatedRaw({ pattern: '(\\d+)' }), 'test.json'))
-                .toThrow(/cannot declare both "pattern" and "generate"/);
+                .toThrow(/cannot declare both a pattern and "generate"/);
         });
 
         it('rejects an optional generated field', () => {
             // A minted value is always producible, so optional is meaningless.
             expect(() => validateRuleSet(generatedRaw({ required: false }), 'test.json'))
                 .toThrow(/generated, so it cannot be optional/);
+        });
+
+        it('rejects declaring both pattern and patterns', () => {
+            expect(() => validateRuleSet(validRaw({
+                fields: { entity: { pattern: '(a)', patterns: ['(b)'] } }
+            }), 'test.json')).toThrow(/cannot declare both "pattern" and "patterns"/);
+        });
+
+        it('rejects a field with no pattern, patterns or generate', () => {
+            expect(() => validateRuleSet(validRaw({
+                fields: { entity: { transform: ['upper'] } }
+            }), 'test.json')).toThrow(/must declare "pattern", "patterns" or "generate"/);
+        });
+
+        it('accepts a patterns array and compiles each entry', () => {
+            const ruleSet = validateRuleSet(validRaw({
+                fields: { entity: { patterns: ['First:\\s*(\\S+)', 'Second:\\s*(\\S+)'] } }
+            }), 'test.json');
+            expect(ruleSet.fields.entity.regexes).toHaveLength(2);
+        });
+
+        it('reports a bad entry in a patterns array by index', () => {
+            expect(() => validateRuleSet(validRaw({
+                fields: { entity: { patterns: ['(good)', '(unclosed'] } }
+            }), 'test.json')).toThrow(/patterns\[1\] is not a valid regex/);
         });
 
         it('reports which rule sets mint values', () => {

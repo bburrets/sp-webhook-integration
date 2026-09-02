@@ -137,8 +137,18 @@ function extractFields(text, ruleSet) {
             continue;
         }
 
-        const match = source.match(field.regex);
-        let raw = match && match[1] !== undefined ? match[1] : null;
+        // Patterns are tried in order; the first that yields a capture wins.
+        // The same field can sit in different places in different document
+        // variants -- a wire's amount is on the detail page for international
+        // transfers and on page 1 for Fed transfers.
+        let raw = null;
+        for (const regex of field.regexes || []) {
+            const match = source.match(regex);
+            if (match && match[1] !== undefined) {
+                raw = match[1];
+                break;
+            }
+        }
 
         if (raw === null) {
             if (field.required) {

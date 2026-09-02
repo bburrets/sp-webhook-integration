@@ -155,10 +155,11 @@ module.exports = {
     WIRE_INTAKE_BELLDINI: {
         coverage: 'detail page included',
         expected: 'WIRE',
-        // Wire__$1,000,000.00_02_26_2026.pdf -- a FED wire. Its later pages are
-        // the vendor's own invoices, with no SinglePoint transaction-detail
-        // page and therefore no PAR Number anywhere in the document. Control
-        // number OCR'd as "164't00504", where 't is a substituted 1.
+        // Wire__$1,000,000.00_02_26_2026.pdf -- a FED wire, 7 pages. Pages 2-6
+        // are the vendor's own invoices and the SinglePoint transaction-detail
+        // page is the LAST one, page 7. It does carry the reference; a Fed
+        // detail page simply has no WIRE AMOUNT line, so the amount comes from
+        // page 1, and it splits the reference with whitespace.
         text: '$ingtePo   in#  2126126, 10:57   AM  ACH Additional Services  '
             + 'View Wire   Transfer   Detail  Fed   Wire   Transfer   (FED)  '
             + "Control Number 164't00504 Template   lD  BELLDINI Debit   Account   Number   -   "
@@ -167,6 +168,16 @@ module.exports = {
             + 'Agent ABA (Routing   /   Transit Number) 122203950  '
             + 'View Wire Transfer Detail   -   U.S. Bank   Commercial lnternet   Banking  '
             + 'Repeat Code Nickname Send Date   (MM/DDryYYY)  0212612026'
+            // --- page 7: the SinglePoint transaction-detail page ---
+            + '  Current   Day   Account   Detail FAM LLC SinglePoint  '
+            + 'Transaction   Detail   For   0212612026  '
+            + 'PAR NUMBER:   260226801   WPY  FED REF:   00431   1  '
+            + 'DATEiTIME   COMPLETED :   0212612026   01   :40:09   PM  '
+            + 'SENDERS   REFERENCE:   260226B01   WPY  '
+            + 'INSTRUCTED   AGENT:   122203950   CATHAY   BANK OF EL MONTE, CA '
+            + 'CREDITOR:   34-107-207 BELLDINI,   lNC.  '
+            + 'IMAD:   2026022611   Q73AGC00431   1  '
+            + 'SOURCE:   EMMSPT   CONTROL NUMBER;   164100504'
     },
 
     WIRE_INTAKE_NINGBO: {
