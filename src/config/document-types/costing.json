@@ -1,0 +1,56 @@
+{
+    "type": "COSTING",
+    "placeholder": true,
+    "_note": "Convention from OutputBox/COSTING/ (flat, no dated subfolders): '{Vendor} -  {InvoiceNumber}.pdf'. The separator is space-hyphen-SPACE-SPACE, and vendor casing is not normalised in the live data. The invoice number is the KEY: it is labelled and survives OCR. The vendor is LOOKED UP from the invoice prefix (src/config/lookups/vendors.json) rather than read off the page, because the page carries several company names with no consistent label -- the buyer's own name, sometimes a different manufacturer, sometimes a bank -- and the existing filenames spell the same legal form eleven different ways. A prefix absent from the map falls through to reading the vendor from the document, which is how LAYLO LLC resolves (bare-digit invoice numbers, but a VENDOR label on the page). Documents that carry neither -- their invoice number is not in the text at all -- flag as MissingFields.",
+    "enabled": true,
+    "extensions": [
+        ".pdf"
+    ],
+    "classify": {
+        "folderHints": [
+            "costing",
+            "intake_costing"
+        ],
+        "filenameHints": [
+            "costing",
+            "cost sheet",
+            "costsheet"
+        ],
+        "contentPatterns": [
+            "\\bCommercial\\s+[Il]nvoice\\b",
+            "\\bINVOICE\\s+NO\\b",
+            "P[O0]RT\\s+[O0][fF]\\s+(?:LOADING|DISCHARGE)",
+            "\\bFOB\\s+PRIC",
+            "SAY\\s+(?:TOTAL\\s+)?U\\.?\\s?S\\.?\\s+DOLLAR",
+            "C[O0][UI]N\\w{0,3}[RT]\\w{0,2}\\s+[O0][fF]\\s+[O0]RI",
+            "MAN[UI]\\w{2,6}CT\\w{2,6}\\w?\\s"
+        ],
+        "minMatches": 1
+    },
+    "fields": {
+        "vendorName": {
+            "lookupFrom": "invoiceNumber",
+            "lookupTable": "vendors",
+            "patterns": [
+                "VENDOR\\s+([A-Z][A-Za-z0-9 &.,'()\\-]{2,58}?(?:LIMITED|LTD|LLC|INC|FZE|CORP|COMPANY)\\.?,?(?:\\s*(?:CO|LTD)\\.?)?)",
+                "ACCOUNT\\s+NAME:\\s*([A-Z][A-Za-z0-9 &.,'()\\-]{2,58}?(?:LIMITED|LTD|LLC|INC|FZE|CORP|COMPANY)\\.?,?(?:\\s*(?:CO|LTD)\\.?)?)"
+            ],
+            "required": true,
+            "transform": [
+                "trim"
+            ],
+            "maxLength": 60,
+            "_note": "Looked up from the invoice prefix; patterns are the fallback for a prefix the map does not know. Each pattern anchors on a legal-form suffix (LLC/LTD/LIMITED/INC/...) rather than a whitespace run, because OCR splits names with multiple spaces ('VENDOR  LAYLO   LLC') and a whitespace terminator would truncate to 'LAYLO'. The letterhead is deliberately NOT a pattern: it is the worst-OCR region of the page and indistinguishable from the buyer's name."
+        },
+        "invoiceNumber": {
+            "pattern": "INVOICE\\s*NO\\.?\\s*[:r]?\\s*([A-Za-z0-9][A-Za-z0-9\\-]{2,30})",
+            "required": true,
+            "transform": [
+                "trim",
+                "upper"
+            ]
+        }
+    },
+    "template": "{vendorName} -  {invoiceNumber}",
+    "validate": "^[A-Za-z0-9][A-Za-z0-9 &.,()'\\-]* -  [A-Za-z0-9\\-]+\\.pdf$"
+}

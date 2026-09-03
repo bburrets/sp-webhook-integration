@@ -1,0 +1,52 @@
+{
+    "type": "CHECK",
+    "placeholder": false,
+    "_note": "Convention CONFIRMED by the business 2026-09-02, against OutputBox/CHECK/{YYYY}/{YYYY_MM}/, which matches the form already used in Intake_Checks. Note 'Check' is title case and the date is NOT zero-padded (1_5_2026). The output folder also contains bad duplicates from an earlier attempt -- 'CHECK_38509_ Dalya Pop_11_07_2026.pdf' (uppercase type, leading space, mixed-case payee, wrong month) beside the correct 'Check_38509_DAL YA POP_1_7_2026.pdf' -- and the validate regex rejects those. checkNumber and payee extract cleanly from the OCR text; checkDate is the weak field, since OCR renders slashes as digits (1/5/2026 -> 11512026).",
+    "enabled": true,
+    "extensions": [
+        ".pdf"
+    ],
+    "classify": {
+        "folderHints": [
+            "check",
+            "intake_checks"
+        ],
+        "filenameHints": [
+            "check",
+            "chk"
+        ],
+        "contentPatterns": [
+            "\\bCheck\\s*Total\\b",
+            "\\bCheck:\\s*\\d{6,}",
+            "\\bNet\\s+Amount\\b"
+        ],
+        "minMatches": 1
+    },
+    "fields": {
+        "checkNumber": {
+            "pattern": "Check:\\s*0*(\\d{3,10})",
+            "required": true,
+            "transform": [
+                "trim"
+            ]
+        },
+        "payee": {
+            "pattern": "([A-Z][A-Za-z0-9 &.,'#\\-]{2,60}?)\\s+Check\\s+Total",
+            "required": true,
+            "transform": [
+                "trim",
+                "upper"
+            ],
+            "maxLength": 60
+        },
+        "checkDate": {
+            "pattern": "(\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{4})\\s+[A-Z][^\\n]*?Check\\s+Total",
+            "required": true,
+            "transform": [
+                "date:M_D_YYYY"
+            ]
+        }
+    },
+    "template": "Check_{checkNumber}_{payee}_{checkDate}",
+    "validate": "^Check_\\d{3,10}_[A-Z0-9][A-Za-z0-9 &.,'#\\-]*_\\d{1,2}_\\d{1,2}_\\d{4}\\.pdf$"
+}

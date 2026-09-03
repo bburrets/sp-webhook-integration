@@ -62,6 +62,100 @@ Graph ──POST──> webhook-handler ──enqueue──> [webhook-notificati
 
 ---
 
+## Document classify & auto-rename (new, NOT live)
+
+Folder-scoped hourly sweep that renames PDFs to a per-document-type convention. Separate from the
+webhook path entirely — new timer + queue + worker, no shared files on the notification path touched.
+
+```
+document-rename-timer (0 30 * * * *) --enqueue--> [document-rename] --> document-rename-worker
+  list folder, filter candidates                                       download -> pdf-parse ->
+  no file I/O, no writes                                               classify -> rename via Graph
+```
+
+**Two libraries, two stages.** `Shared Documents/Intake_{Checks,Wires,GL-JE,Costing}` is the
+pre-rename intake; **`OutputBox/{CHECK,GLJE,WIRE,COSTING}` is the authoritative post-rename form** and is
+where the conventions come from. All use dated subfolders except `OutputBox/COSTING`, which is flat.
+For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
+`WIRE_251103B02FHR_$237,800.00.pdf` (keyed on the U.S. Bank PAR Number, not a date).
+
+- Rules live in `src/config/document-types/{check,costing,glje,wire}.json`, validated at load time.
+  All four types extract end to end. **COSTING resolves its vendor by LOOKUP, not extraction**:
+  the invoice prefix maps to a canonical name via `src/config/lookups/vendors.json`, because the page
+  carries several company names with no consistent label and the existing filenames spell the same
+  legal form eleven different ways. A prefix the map lacks falls through to reading a `VENDOR` label
+  off the page (how LAYLO resolves, its invoices being bare digits); neither path working means
+  `MissingFields`. The map was derived from the 29 filenames in OutputBox/COSTING and has a
+  `_review` block flagging its judgement calls.
+- **The placeholder interlock is PER TYPE.** A rule set marked `placeholder: true` cannot rename its
+  own files whatever `RENAME_DRY_RUN` says, but does not hold other types back. CHECK/WIRE/GLJE are
+  confirmed; COSTING is not, so it keeps proposing while the others can go live.
+- **GLJE's trailing 6-digit id is randomly generated**, not read from the document (confirmed
+  2026-09-02). So a dry-run GLJE name will NOT equal what a live run produces — check the shape, not
+  the value. A collision on it is bad luck, so the worker re-mints and retries; a collision on an
+  extracted value stays an exception. Idempotency holds because compliance is checked before any
+  value is minted.
+- **CHECK, WIRE and GLJE were confirmed by the business 2026-09-02** and are no longer marked
+  placeholder, so `RENAME_DRY_RUN` (default true) is the only guard left. COSTING stays disabled.
+- **Configured target is `Shared Documents`** (the intake side), scanned recursively. Folder hints
+  cover both libraries: `CHECK`/`Intake_Checks`, `WIRE`/`Intake_Wires`, `GLJE`/`Intake_GL-JE`,
+  `COSTING`/`Intake_Costing`. A disabled type's folder is skipped without downloading, so the sweep
+  never touches `Intake_Costing`.
+- **The documents are OCR'd scans with degraded text** — they DO have a text layer, so the
+  NoTextLayer gate does not catch them. `1/5/2026` reads as `11512026`, `6/30/2026` as `6t30t2026`,
+  and wire PAR numbers lose their `B` to an `8` (`251103B02FHR` → `251'103802FH   R`). Anchor
+  patterns on the lines that survive (`Check:`, `G/L Date:`, `Amount`), and shape validate regexes
+  to reject the known corruptions — the WIRE regex requires a literal `B` in position 7, which is
+  why `WIRE_251125801YWH_...` (already in the library from an earlier attempt) is refused.
+  Bad extractions fail safe to the exception path; hit rate is the open question a dry run measures.
+- **Configuration is a pasted SharePoint URL** (`RENAME_LIBRARY_URL`), not a site path / drive id /
+  folder path. The library name is resolved to a drive at scan time, and status columns are written
+  via `/drives/{driveId}/items/{itemId}/listItem/fields`, so there is no list id to configure either.
+  Subfolders are walked by default (`RENAME_RECURSIVE=true`) — pointing at the library root covers
+  every type and month and needs no upkeep as new month folders appear.
+- **Content decides the document type; the folder is only a fallback.** A document is classified from
+  its own text first, and the folder is consulted only when that is inconclusive (nothing matched or
+  a tie). Measured 7/7 on verbatim OCR text from real documents
+  (`test/fixtures/ocr-samples.js`, guarded by `document-classification-accuracy.test.js`), including
+  a misfiled document being typed by what it actually is. `RENAME_CLASSIFY_BY_FOLDER=false` disables
+  the fallback entirely. Cost of the fallback: an unrelated file in a type folder is typed rather
+  than declined, then fails extraction as `MissingFields` instead of `Unclassified` — never a wrong
+  rename, just a less precise status.
+- State lives in SharePoint columns on the library (`RenameStatus`, `RenameAttempts`,
+  `RenameContentHash`, ...), not Table Storage — the folder listing already expands
+  `listItem($expand=fields)`, so it is free. Seven columns must be created before enabling; the spec
+  is in `docs/document-rename-conventions.md`. **Every one must have an EMPTY default** — the timer
+  reads `RenameStatus`/`RenameAttempts` to decide what to skip, so a default of `Renamed` or an
+  attempts default of 3 would make the sweep skip every file. Create names with no spaces or the
+  internal name becomes `Rename_x0020_Status` and writes fail.
+- **`Shared Documents` IS the library the live Accounting_Research webhook watches.** Every rename
+  (and every status-column write, including in dry run) bumps the item and fires a notification →
+  `FIN_SCAN_Rename_And_Storage` queue item → the same robot this feature replaces. No code change
+  fixes this; it is a cutover decision — retire the robot's rename step, filter/remove the webhook,
+  or point the sweep at `OutputBox` instead. Settle it before `RENAME_DRY_RUN=false`.
+- Graph write permission (`Sites.ReadWrite.All`) is **unverified** — see the checklist in the doc.
+
+- **WIRE fields are on a LATER page, not page 1.** The PAR Number and a clean unformatted
+  `WIRE AMOUNT` live on the SinglePoint "Current Day Account Detail" page. `pdf-parse` reads every
+  page, so this works — but any manual investigation that reads only page 1 will wrongly conclude
+  the PAR Number is absent. That mistake was made once already.
+- **Read the reference from `SENDERS REFERENCE`, not the `PAR NUMBER` line.** Same value; OCR
+  corrupts the PAR NUMBER rendering (`260226801WYD`) and leaves SENDERS REFERENCE clean
+  (`260226B01WYD`). Read the amount from `WIRE AMOUNT` (clean, unformatted, + `thousands`
+  transform) rather than the mangled page-1 figure.
+- **Fed wires rename too.** Their detail page is the LAST page (7 of 7 on the one examined), with
+  pages 2-6 being vendor invoices. They differ only in that the reference is whitespace-split
+  (`260226B01   WPY`) and there is no `WIRE AMOUNT` line, so the amount falls back to page 1 — the
+  `amount` field declares two `patterns`, tried in order. Verified:
+  `Wire__$1,000,000.00_02_26_2026.pdf` → `WIRE_260226B01WPY_$1,000,000.00.pdf`.
+  **No open questions remain for WIRE.**
+- A field may declare `patterns` (array, first match wins) instead of `pattern`, for values that sit
+  in different places in different document variants.
+
+Full reference: `docs/document-rename-conventions.md`
+
+---
+
 ## Gotchas that will cost you hours
 
 - **`src/shared/constants.js` is an ES module** (`export const`, no `module.exports`) in an
@@ -81,6 +175,9 @@ Graph ──POST──> webhook-handler ──enqueue──> [webhook-notificati
   `az functionapp config appsettings list --name webhook-functions-sharepoint-002 --resource-group rg-sharepoint-webhooks -o json`
 - `uipath-queue-client.js` `getQueueItems()` filters on `QueueDefinitionName`, which Orchestrator
   rejects with HTTP 400. The valid property is `QueueDefinitionId`. (Known broken, diagnostics only.)
+- Graph calls have **no 429/Retry-After handling** anywhere except `src/shared/graph-request.js`
+  (added for the rename sweep, which is a much heavier Graph consumer). `axios-retry` is wired for
+  UiPath only. `RETRY_CONFIG` in constants.js is declared but never read on the Graph path.
 
 ### API quirks (verified empirically)
 
@@ -98,7 +195,7 @@ Graph ──POST──> webhook-handler ──enqueue──> [webhook-notificati
 # Deploy (func publish)
 npm run deploy
 
-# Tests — 179 passing, 10 suites
+# Tests — 466 passing, 23 suites
 npm test
 
 # Rollback layer 1 (seconds): revert async dispatch only, NOT the shared-path changes
@@ -118,6 +215,8 @@ Full rollback procedure: `docs/superpowers/plans/rollback-state-2026-08-18.md`
 
 - Deduplicator fails **open** on transient Table Storage errors → can duplicate a submission.
 - `$top=200` was justified against the old 300s window; occupancy over 1500s is unmeasured.
+  `getRecentItems` also ignores `@odata.nextLink`, so 200 is a silent truncation ceiling. (The new
+  `sharepoint-folder-scanner.js` paginates properly; `enhanced-forwarder.js` still does not.)
 - Forwarding (`forward:`) failures are still swallowed — retry is UiPath-only. No live webhook
   uses `forward:` today.
 - Converting `constants.js` to CommonJS would remove the Node floor and let Jest load it for real.
