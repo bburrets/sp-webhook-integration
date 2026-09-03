@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const { isKnownTransform } = require('./document-field-transforms');
 const { isKnownGenerator, isValidLength } = require('./document-field-generators');
+const { getLookupTable } = require('./document-lookup-tables');
 
 const DEFAULT_RULES_DIR = path.join(__dirname, '..', 'config', 'document-types');
 const TEMPLATE_PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
@@ -54,6 +55,96 @@ function templatePlaceholders(template) {
     return names;
 }
 
+/**
+ * Validate the lookup half of a field spec.
+ * @param {Object} params
+ */
+function validateLookupSpec({ name, spec, allFields, isGenerated, problems }) {
+    if (isGenerated) {
+        problems.push(`fields.${name} cannot be both generated and looked up`);
+    }
+
+    if (typeof spec.lookupFrom !== 'string' || !spec.lookupFrom) {
+        problems.push(`fields.${name}.lookupFrom must name another field`);
+    } else if (spec.lookupFrom === name) {
+        problems.push(`fields.${name}.lookupFrom cannot reference itself`);
+    } else if (!Object.prototype.hasOwnProperty.call(allFields, spec.lookupFrom)) {
+        problems.push(`fields.${name}.lookupFrom names "${spec.lookupFrom}", which is not a declared field`);
+    } else if (allFields[spec.lookupFrom].lookupFrom !== undefined) {
+        // One level only: chains would need dependency ordering for no real benefit.
+        problems.push(`fields.${name}.lookupFrom points at "${spec.lookupFrom}", which is itself a lookup`);
+    }
+
+    if (typeof spec.lookupTable !== 'string' || !spec.lookupTable) {
+        problems.push(`fields.${name}.lookupTable must name a lookup table`);
+    } else if (!getLookupTable(spec.lookupTable)) {
+        problems.push(
+            `fields.${name}.lookupTable names "${spec.lookupTable}", `
+            + 'which does not exist in src/config/lookups/'
+        );
+    }
+}
+
+/**
+ * Validate the generator half of a field spec.
+ * @param {Object} params
+ */
+function validateGeneratorSpec({ name, spec, problems }) {
+    if (!isKnownGenerator(spec.generate)) {
+        problems.push(`fields.${name}.generate is not a known generator: "${spec.generate}"`);
+    }
+    if (!isValidLength(spec.length)) {
+        problems.push(`fields.${name}.length must be a positive integer when "generate" is set`);
+    }
+    if (spec.required === false) {
+        // A generated value is always producible, so optional is meaningless.
+        problems.push(`fields.${name} is generated, so it cannot be optional`);
+    }
+}
+
+/**
+ * Compile a field's pattern list. Patterns are case-insensitive: source
+ * documents vary in capitalisation between vendors and systems, and no pattern
+ * here depends on case to match.
+ * @returns {RegExp[]}
+ */
+function compileFieldPatterns({ name, spec, rawPatterns, problems }) {
+    const regexes = [];
+    rawPatterns.forEach((pattern, index) => {
+        const label = spec.patterns !== undefined
+            ? `fields.${name}.patterns[${index}]`
+            : `fields.${name}.pattern`;
+        const compiled = compilePattern(pattern, label, problems, 'i');
+        if (compiled) {
+            if (compiled.source.indexOf('(') === -1) {
+                problems.push(`${label} must contain a capture group`);
+            }
+            regexes.push(compiled);
+        }
+    });
+    return regexes;
+}
+
+/**
+ * Validate the transform chain and maxLength of a field spec.
+ * @returns {string[]} The transform list, or [] if unusable
+ */
+function validateTransformSpec({ name, spec, problems }) {
+    const transform = spec.transform === undefined ? [] : spec.transform;
+
+    if (!Array.isArray(transform)) {
+        problems.push(`fields.${name}.transform must be an array`);
+        return [];
+    }
+
+    for (const transformName of transform) {
+        if (!isKnownTransform(transformName)) {
+            problems.push(`fields.${name}.transform contains unknown transform "${transformName}"`);
+        }
+    }
+    return transform;
+}
+
 function validateFields(raw, problems) {
     const fields = {};
 
@@ -74,8 +165,14 @@ function validateFields(raw, problems) {
             continue;
         }
 
-        // A field is either read out of the document or minted at rename time.
+        // A field is read from the document, minted at rename time, or derived
+        // from another field via a lookup table.
         const isGenerated = spec.generate !== undefined;
+        const isLookup = spec.lookupFrom !== undefined || spec.lookupTable !== undefined;
+
+        if (isLookup) {
+            validateLookupSpec({ name, spec, allFields: raw.fields, isGenerated, problems });
+        }
         const rawPatterns = spec.patterns !== undefined
             ? spec.patterns
             : (spec.pattern !== undefined ? [spec.pattern] : []);
@@ -92,45 +189,14 @@ function validateFields(raw, problems) {
 
         let regexes = [];
         if (isGenerated) {
-            if (!isKnownGenerator(spec.generate)) {
-                problems.push(`fields.${name}.generate is not a known generator: "${spec.generate}"`);
-            }
-            if (!isValidLength(spec.length)) {
-                problems.push(`fields.${name}.length must be a positive integer when "generate" is set`);
-            }
-            if (spec.required === false) {
-                // A generated value is always producible, so optional is meaningless.
-                problems.push(`fields.${name} is generated, so it cannot be optional`);
-            }
-        } else if (rawPatterns.length === 0) {
-            problems.push(`fields.${name} must declare "pattern", "patterns" or "generate"`);
-        } else {
-            // Case-insensitive: source documents vary in capitalisation between
-            // vendors and systems, and no pattern here depends on case to match.
-            rawPatterns.forEach((pattern, index) => {
-                const label = spec.patterns !== undefined
-                    ? `fields.${name}.patterns[${index}]`
-                    : `fields.${name}.pattern`;
-                const compiled = compilePattern(pattern, label, problems, 'i');
-                if (compiled) {
-                    if (compiled.source.indexOf('(') === -1) {
-                        problems.push(`${label} must contain a capture group`);
-                    }
-                    regexes.push(compiled);
-                }
-            });
+            validateGeneratorSpec({ name, spec, problems });
+        } else if (rawPatterns.length > 0) {
+            regexes = compileFieldPatterns({ name, spec, rawPatterns, problems });
+        } else if (!isLookup) {
+            problems.push(`fields.${name} must declare "pattern", "patterns", "generate" or a lookup`);
         }
 
-        const transform = spec.transform === undefined ? [] : spec.transform;
-        if (!Array.isArray(transform)) {
-            problems.push(`fields.${name}.transform must be an array`);
-        } else {
-            for (const transformName of transform) {
-                if (!isKnownTransform(transformName)) {
-                    problems.push(`fields.${name}.transform contains unknown transform "${transformName}"`);
-                }
-            }
-        }
+        const transform = validateTransformSpec({ name, spec, problems });
 
         if (spec.maxLength !== undefined
             && (!Number.isInteger(spec.maxLength) || spec.maxLength < 1)) {
@@ -154,9 +220,11 @@ function validateFields(raw, problems) {
             regex: regexes[0] || null,
             generate: isGenerated ? spec.generate : null,
             length: isGenerated ? spec.length : null,
+            lookupFrom: isLookup ? spec.lookupFrom : null,
+            lookupTable: isLookup ? spec.lookupTable : null,
             required: isGenerated ? true : required !== false,
             default: spec.default === undefined ? null : String(spec.default),
-            transform: Array.isArray(transform) ? transform : [],
+            transform,
             maxLength: spec.maxLength === undefined ? null : spec.maxLength
         };
     }

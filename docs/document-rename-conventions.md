@@ -140,6 +140,8 @@ pattern or an unresolvable template placeholder throws rather than producing a w
 | `classify.minMatches` | Minimum signals for the type to be considered at all. |
 | `fields.<name>.pattern` | Case-insensitive regex; **capture group 1** is the value. |
 | `fields.<name>.patterns` | Array of regexes tried in order; the first with a capture wins. Use when the same field sits in different places in different document variants. Mutually exclusive with `pattern`. |
+| `fields.<name>.lookupFrom` | Derive this field from another field's value instead of reading it. Names the source field; one level only, no chains. |
+| `fields.<name>.lookupTable` | Table in `src/config/lookups/` to resolve against, by longest matching prefix. A miss falls through to this field's own `patterns`. |
 | `fields.<name>.generate` | Mint the value instead of reading it. Currently only `"digits"`. Mutually exclusive with `pattern`, and cannot be optional. |
 | `fields.<name>.length` | Digit count, required when `generate` is set. |
 | `fields.<name>.required` | Default `true`. An optional field must declare a `default`. |
@@ -363,7 +365,7 @@ confirmation.
 | CHECK | `Check_{number}_{PAYEE}_{M}_{D}_{YYYY}.pdf` | `Check_38490_MICHAEL RADOCHAY_1_5_2026.pdf` | **Extracts end to end today.** Note `Check` is title case and the date is **not** zero-padded. |
 | WIRE | `WIRE_{parNumber}_${amount}.pdf` | `WIRE_251103B02FHR_$237,800.00.pdf` | **Extracts end to end, Fed and international alike.** The reference comes from the transaction-detail page, which is not page 1 and can be the last page. `WIRE` is uppercase, single underscore, no date — the reference encodes it (`251103` = 2025-11-03). |
 | GLJE | `GLJE_{MM}_{DD}_{YYYY}_{6 digits}.pdf` | `GLJE_11_03_2025_129334.pdf` | **Extracts end to end today.** The G/L date comes from the document; the trailing 6 digits are **randomly generated** (confirmed 2026-09-02), so the name is not reproducible between runs. |
-| COSTING | `{Vendor} -  {InvoiceNumber}.pdf` (separator is space-hyphen-**space-space**) | `MOLAX TRADING LIMITED -  BIM-26-006.pdf` | **Blocked, ships disabled.** The invoice number extracts reliably; the vendor name does not. See below. |
+| COSTING | `{Vendor} -  {InvoiceNumber}.pdf` (separator is space-hyphen-**space-space**) | `MOLAX TRADING LIMITED -  BIM-26-006.pdf` | **Enabled, still `placeholder`.** The vendor is looked up from the invoice prefix rather than read off the page. See below. |
 
 ### Dry-run result, 2026-09-02
 
@@ -444,36 +446,93 @@ file. Fixtures in `test/fixtures/ocr-samples.js` are tagged with their page cove
 page-1-only: a failure on those is a fixture limitation, not a real one.
 
 
-### Why COSTING is blocked
+### COSTING: the vendor is looked up, not read
 
-The convention itself is clear, and the validate regex accepts all 29 real filenames. The problem is
-extraction:
+The convention is `{Vendor} -  {InvoiceNumber}.pdf`, and the two halves behave very differently.
 
-- **Invoice number: fine.** It comes off the `INVOICE NO.` label, which survives OCR
-  (`INVOICE NO.: BIM-26-006`, `INVOICE NO.r 100456` — the label degrades, the value does not).
-- **Vendor name: not extractable.** Letterheads are the most OCR-corrupted part of these pages
-  because large stylised fonts scan worst. `IDEAL GROUP HOLDINGS LIMITED` reads as
-  `IDf,AL GROUP HOLDINGS LIMITED`; `MOLAX TRADING LIMITED` as `i,lOLAX TRADING LIIMITED`. Only some
-  invoices carry a `VENDOR` label at all, and where one exists the value is split by OCR spacing
-  (`VENDOR  LAYLO   LLC` yields `LAYLO`, not `LAYLO LLC`).
+**The invoice number is a good key.** It sits behind an `INVOICE NO.` label that survives OCR even
+when the label itself degrades (`INVOICE NO.r   100456`).
 
-The live data is inconsistent for the same reason: `BEG4KLOTHING, INC` and `Beg4Kloathing, Inc` are
-the same vendor, spelled and cased two ways.
+**The vendor name is a poor thing to read off the page**, for three separate reasons — only the
+first of which is about OCR:
 
-**The viable fix is a vendor lookup keyed on the invoice-number prefix**, which is vendor-specific
-and extracts cleanly: `AIT-FAM-` → Ai Trading Inc, `B4K` → BEG4KLOTHING INC, `IDL` → IDEAL GROUP
-HOLDINGS LIMITED, `BIM-` → MOLAX TRADING LIMITED, `GRTX-` → GARTEX OVERSEAS LIMITED, and so on.
-That would also canonicalise the existing spelling drift. It needs two things from the business:
-the authoritative vendor list, and confirmation of the prefix mapping — two observed cases do not
-fit a clean prefix rule (`LAYLO LLC` invoices are bare numbers like `100456`, and `RAINBOW LINK
-(BANGLADESH) LTD` uses two unrelated prefixes, `RSLGAPZ` and `TISLFAM-`).
+1. *Corruption.* `IDEAL GROUP HOLDINGS LIMITED` reads as `IDf,AL GROUP HOLDINGS LIMITED`. Two of
+   three samples are clean, so this is the minor problem.
+2. *No consistent anchor.* Three invoices put the vendor in three places: LAYLO labels it `VENDOR`,
+   MOLAX has it unlabelled beside a PO number, IDEAL has it as an unlabelled letterhead. Every page
+   also carries **FAM** — the buyer — which looks identical to a vendor, plus sometimes a bank or a
+   different manufacturer.
+3. *The target itself is inconsistent.* The existing filenames use **eleven** legal-form spellings
+   (`LIMITED`, `Inc`, `INC`, `CO,LTD`, `CO, LTD`, `LTD CO`, `Ltd Co`, `LLC`, `FZE`, `Limited Co`,
+   `LTD`), 13 uppercase against 6 title case, and `COMPASS APPAREL INC` / `Compass Apparel Inc` for
+   the same vendor. No rule produces both `CO, LTD` and `CO,LTD` — the difference is a comma someone
+   typed.
 
-Remaining to go live:
+Point 3 is why extraction cannot be the primary path: even with perfect OCR it would produce names
+that disagree with the ones already filed. So the vendor is resolved in three steps.
 
-1. For COSTING: supply the canonical vendor list and prefix mapping, or leave the type disabled.
-2. Run a full dry-run sweep and review every proposed name before setting `RENAME_DRY_RUN=false`.
-   For GLJE, review the shape — the id will differ when the live run mints a new one.
-3. Resolve the webhook interaction below.
+#### Step 1 — lookup
+
+The invoice prefix resolves against `src/config/lookups/vendors.json`, longest prefix first:
+
+```
+BIM-26-006  ->  prefix BIM  ->  "MOLAX TRADING LIMITED"
+```
+
+The table's value is used **verbatim**; field transforms are not applied, because the table already
+holds the canonical form and upper-casing `Ai Trading Inc` would corrupt it. One spelling per
+vendor, always — which is what fixes the existing drift.
+
+The map was derived from the 29 filenames in `OutputBox/COSTING` and covers 17 of 18 vendors seen
+there. It carries a `_review` block noting the judgement calls: the `8892` casing tie, the
+`Kloathing`/`Klothing` typo, and `FAM-` as a low-confidence prefix that may be a purchase-order
+reference rather than a vendor's own numbering.
+
+#### Step 2 — extract
+
+A prefix the map does not know falls through to this field's own `patterns`, which anchor on a
+`VENDOR` label or a bank `ACCOUNT NAME`:
+
+```
+100456  ->  no prefix match  ->  "VENDOR  LAYLO   LLC"  ->  "LAYLO LLC"
+```
+
+This is how LAYLO resolves, and it is why the map need not be complete. The patterns anchor on a
+legal-form suffix (`LLC`, `LTD`, `LIMITED`, ...) rather than a whitespace run, because OCR splits
+names with multiple spaces and a whitespace terminator truncates `LAYLO   LLC` to `LAYLO`. The
+letterhead is deliberately **not** a pattern: worst OCR on the page, and indistinguishable from the
+buyer's name.
+
+#### Step 3 — flag
+
+Neither path resolved. The file is recorded with whatever *was* found:
+
+```
+RenameStatus  MissingFields
+RenameDetail  Could not extract required field(s): invoiceNumber, vendorName
+```
+
+The IDEAL invoice lives here permanently: `IDL260064` appears **nowhere** in the document text, on
+any of its four pages, so there is no key to look up and no name to build. That number must come
+from a portal or manual entry. This is a floor, not a bug — count these in a dry run before judging
+the hit rate.
+
+#### Verified
+
+| File | Invoice | Vendor | Via | Outcome |
+|---|---|---|---|---|
+| `costing_Image_001.pdf` | `BIM-26-006` | MOLAX TRADING LIMITED | lookup | `MOLAX TRADING LIMITED -  BIM-26-006.pdf` |
+| `costing_Image_002.pdf` | `100456` | LAYLO LLC | extract | `LAYLO LLC -  100456.pdf` |
+| `costing_Image_003.pdf` | — | — | — | `MissingFields` |
+
+COSTING is enabled but still `placeholder: true`, so it reports `DryRun` rather than renaming until
+the vendor spellings are reviewed.
+
+### The placeholder interlock is per type
+
+A rule set marked `"placeholder": true` cannot rename its own files whatever `RENAME_DRY_RUN` says,
+but it does **not** hold other types back. With CHECK, WIRE and GLJE confirmed and COSTING not,
+setting `RENAME_DRY_RUN=false` takes the first three live while COSTING keeps proposing.
 
 ### Scanning Shared Documents overlaps the live webhook
 

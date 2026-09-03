@@ -93,26 +93,41 @@ function validateRenameConfig(renameConfig = getRenameConfig()) {
 }
 
 /**
- * Should renames actually be written?
+ * Should renames actually be written for this document?
  *
- * Placeholder rule sets force dry-run regardless of RENAME_DRY_RUN. Those
- * patterns are not yet confirmed by the business; letting them rename live
- * files would be worse than doing nothing.
+ * The placeholder interlock is PER TYPE, not global. A rule set whose convention
+ * is not yet confirmed cannot rename its own files, but it must not stop a
+ * confirmed type from renaming — otherwise one unreviewed document type holds
+ * the whole feature in dry-run.
+ *
+ * Called without a rule set (from the timer, which has not classified anything
+ * yet) it reports only what the RENAME_DRY_RUN setting says, plus a note if any
+ * type is still a placeholder.
  *
  * @param {Object} [renameConfig]
+ * @param {Object} [ruleSet] - The classified type, when known
  * @returns {{dryRun: boolean, reason: string|null}}
  */
-function resolveDryRun(renameConfig = getRenameConfig()) {
-    if (hasPlaceholderRules()) {
+function resolveDryRun(renameConfig = getRenameConfig(), ruleSet = null) {
+    if (ruleSet && ruleSet.placeholder) {
         return {
             dryRun: true,
-            reason: `Rule sets still marked placeholder: ${placeholderTypes().join(', ')}. `
-                + 'Confirm the naming conventions and set "placeholder": false to enable renaming.'
+            reason: `${ruleSet.type} is still marked placeholder. Confirm its convention and set `
+                + '"placeholder": false to enable renaming for this type.'
         };
     }
 
     if (renameConfig.dryRun) {
         return { dryRun: true, reason: 'RENAME_DRY_RUN is enabled' };
+    }
+
+    if (!ruleSet && hasPlaceholderRules()) {
+        // Timer-level reporting only: these types will stay in dry-run even
+        // once RENAME_DRY_RUN is off.
+        return {
+            dryRun: false,
+            reason: `Live, except these types which remain placeholders: ${placeholderTypes().join(', ')}`
+        };
     }
 
     return { dryRun: false, reason: null };

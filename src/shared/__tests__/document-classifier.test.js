@@ -240,9 +240,9 @@ describe('document-classifier', () => {
             expect(classify({ fileName: 's.pdf', text: '', folderPath: 'Intake_GL-JE/2026_06' }).type).toBe('GLJE');
         });
 
-        it('does not classify Intake_Costing, since COSTING is disabled', () => {
+        it('classifies Intake_Costing now that COSTING is active', () => {
             expect(classify({ fileName: 'costing_Image_001.pdf', text: '', folderPath: 'Intake_Costing/2026_08' }).type)
-                .toBeNull();
+                .toBe('COSTING');
         });
 
         it('classifies each document type from representative text', () => {

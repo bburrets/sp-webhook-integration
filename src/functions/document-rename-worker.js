@@ -108,8 +108,6 @@ async function handleRenameMessage(message, context) {
     const logger = createLogger(context);
     const job = typeof message === 'string' ? JSON.parse(message) : message;
     const renameConfig = getRenameConfig();
-    const { dryRun, reason: dryRunReason } = resolveDryRun(renameConfig);
-
     const { driveId, driveItemId } = job;
     // The folder a file sits in identifies its document type in this library.
     const folderPath = job.folderPath || '';
@@ -121,8 +119,7 @@ async function handleRenameMessage(message, context) {
         name: job.name,
         folderPath,
         priorAttempts,
-        dequeueCount: context.triggerMetadata?.dequeueCount,
-        dryRun
+        dequeueCount: context.triggerMetadata?.dequeueCount
     });
 
     /**
@@ -220,6 +217,10 @@ async function handleRenameMessage(message, context) {
             contentHash: file.sha1Hash
         });
     }
+
+    // Decided here rather than up front: the interlock is per document type, so
+    // it needs the classification.
+    const { dryRun, reason: dryRunReason } = resolveDryRun(renameConfig, classification.ruleSet);
 
     const rebuild = () => buildProposedName({
         fileName: file.name,

@@ -146,20 +146,44 @@ describe('document-rename-config', () => {
     });
 
     describe('resolveDryRun', () => {
-        it('forces dry run while any rule set is a placeholder', () => {
-            // Guessed patterns must never rename a real file.
+        it('forces dry run for a placeholder type, whatever the setting says', () => {
+            // An unconfirmed convention must never rename a real file.
+            process.env.RENAME_DRY_RUN = 'false';
+            const result = resolveDryRun(undefined, { type: 'COSTING', placeholder: true });
+            expect(result.dryRun).toBe(true);
+            expect(result.reason).toMatch(/COSTING is still marked placeholder/);
+        });
+
+        it('does NOT hold a confirmed type in dry run because another is a placeholder', () => {
+            // The interlock is per type. One unreviewed document type must not
+            // keep the whole feature from going live.
             hasPlaceholderRules.mockReturnValue(true);
-            placeholderTypes.mockReturnValue(['CHECK', 'GLJE']);
+            placeholderTypes.mockReturnValue(['COSTING']);
+            process.env.RENAME_DRY_RUN = 'false';
+
+            expect(resolveDryRun(undefined, { type: 'CHECK', placeholder: false }).dryRun).toBe(false);
+        });
+
+        it('still names the placeholder types when reporting without a type', () => {
+            // The timer has not classified anything yet, so it reports which
+            // types will stay dry even once the setting is off.
+            hasPlaceholderRules.mockReturnValue(true);
+            placeholderTypes.mockReturnValue(['COSTING']);
             process.env.RENAME_DRY_RUN = 'false';
 
             const result = resolveDryRun();
-            expect(result.dryRun).toBe(true);
-            expect(result.reason).toMatch(/placeholder: CHECK, GLJE/);
+            expect(result.dryRun).toBe(false);
+            expect(result.reason).toMatch(/remain placeholders: COSTING/);
         });
 
         it('reports dry run when the setting asks for it', () => {
             process.env.RENAME_DRY_RUN = 'true';
             expect(resolveDryRun()).toMatchObject({ dryRun: true, reason: 'RENAME_DRY_RUN is enabled' });
+        });
+
+        it('a placeholder type outranks the setting being off', () => {
+            process.env.RENAME_DRY_RUN = 'true';
+            expect(resolveDryRun(undefined, { type: 'COSTING', placeholder: true }).dryRun).toBe(true);
         });
 
         it('allows live renaming only with real rules and dry run off', () => {

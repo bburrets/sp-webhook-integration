@@ -174,10 +174,10 @@ describe('document-type-rules', () => {
             }), 'test.json')).toThrow(/cannot declare both "pattern" and "patterns"/);
         });
 
-        it('rejects a field with no pattern, patterns or generate', () => {
+        it('rejects a field with no pattern, patterns, generate or lookup', () => {
             expect(() => validateRuleSet(validRaw({
                 fields: { entity: { transform: ['upper'] } }
-            }), 'test.json')).toThrow(/must declare "pattern", "patterns" or "generate"/);
+            }), 'test.json')).toThrow(/must declare "pattern", "patterns", "generate" or a lookup/);
         });
 
         it('accepts a patterns array and compiles each entry', () => {
@@ -290,8 +290,8 @@ describe('document-type-rules', () => {
 
     describe('the rule sets shipped in this repo', () => {
         it('all load and validate', () => {
-            // COSTING ships disabled: no naming convention exists for it yet.
-            expect(getRuleSets().map((r) => r.type).sort()).toEqual(['CHECK', 'GLJE', 'WIRE']);
+            expect(getRuleSets().map((r) => r.type).sort())
+                .toEqual(['CHECK', 'COSTING', 'GLJE', 'WIRE']);
         });
 
         it('every rendered-name convention is self-consistent', () => {
@@ -303,15 +303,81 @@ describe('document-type-rules', () => {
             }
         });
 
-        it('are all confirmed, so the placeholder interlock is lifted', () => {
-            // Confirmed by the business 2026-09-02. RENAME_DRY_RUN is now the
-            // only thing standing between the sweep and a live rename.
-            expect(hasPlaceholderRules()).toBe(false);
-            expect(placeholderTypes()).toEqual([]);
+        it('has CHECK, WIRE and GLJE confirmed and COSTING still a placeholder', () => {
+            // The interlock is per type, so COSTING being unconfirmed does not
+            // hold the other three in dry-run.
+            expect(placeholderTypes()).toEqual(['COSTING']);
+            expect(hasPlaceholderRules()).toBe(true);
+            for (const type of ['CHECK', 'WIRE', 'GLJE']) {
+                expect({ type, placeholder: getRuleSet(type).placeholder })
+                    .toEqual({ type, placeholder: false });
+            }
         });
     });
 
-    describe('the COSTING rules (shipped disabled)', () => {
+    describe('lookup fields', () => {
+        function lookupRaw(fieldOverrides = {}, otherFields = {}) {
+            return validRaw({
+                fields: {
+                    invoiceNumber: { pattern: 'INVOICE\\s+NO:\\s*(\\S+)' },
+                    vendorName: {
+                        lookupFrom: 'invoiceNumber',
+                        lookupTable: 'vendors',
+                        ...fieldOverrides
+                    },
+                    ...otherFields
+                },
+                template: 'X_{vendorName}_{invoiceNumber}',
+                validate: '^X_.+_.+\\.pdf$'
+            });
+        }
+
+        it('accepts a well-formed lookup field with no pattern of its own', () => {
+            const ruleSet = validateRuleSet(lookupRaw(), 'test.json');
+            expect(ruleSet.fields.vendorName).toMatchObject({
+                lookupFrom: 'invoiceNumber',
+                lookupTable: 'vendors'
+            });
+        });
+
+        it('accepts a lookup field with fallback patterns', () => {
+            const ruleSet = validateRuleSet(lookupRaw({ patterns: ['VENDOR\\s+(\\S+)'] }), 'test.json');
+            expect(ruleSet.fields.vendorName.regexes).toHaveLength(1);
+        });
+
+        it('rejects lookupFrom naming a field that does not exist', () => {
+            expect(() => validateRuleSet(lookupRaw({ lookupFrom: 'nope' }), 'test.json'))
+                .toThrow(/names "nope", which is not a declared field/);
+        });
+
+        it('rejects a lookup table that does not exist', () => {
+            expect(() => validateRuleSet(lookupRaw({ lookupTable: 'nosuchtable' }), 'test.json'))
+                .toThrow(/names "nosuchtable", which does not exist/);
+        });
+
+        it('rejects a chain of lookups', () => {
+            // One level only; chains would need dependency ordering for no benefit.
+            const raw = lookupRaw({}, {
+                second: { lookupFrom: 'vendorName', lookupTable: 'vendors' }
+            });
+            raw.template = 'X_{vendorName}_{invoiceNumber}_{second}';
+            expect(() => validateRuleSet(raw, 'test.json'))
+                .toThrow(/points at "vendorName", which is itself a lookup/);
+        });
+
+        it('rejects a field that is both generated and looked up', () => {
+            expect(() => validateRuleSet(lookupRaw({ generate: 'digits', length: 4 }), 'test.json'))
+                .toThrow(/cannot be both generated and looked up/);
+        });
+
+        it('rejects a missing lookupTable', () => {
+            const raw = lookupRaw();
+            delete raw.fields.vendorName.lookupTable;
+            expect(() => validateRuleSet(raw, 'test.json')).toThrow(/lookupTable must name a lookup table/);
+        });
+    });
+
+    describe('the COSTING rules', () => {
         const fsMod = require('fs');
         const pathMod = require('path');
 
@@ -320,12 +386,20 @@ describe('document-type-rules', () => {
             return validateRuleSet(JSON.parse(fsMod.readFileSync(file, 'utf8')), 'costing.json');
         }
 
-        it('is excluded from the active rule sets', () => {
-            expect(getRuleSets().map((r) => r.type)).not.toContain('COSTING');
+        it('is active now that the vendor lookup exists', () => {
+            expect(getRuleSets().map((r) => r.type)).toContain('COSTING');
         });
 
-        it('still validates as a well-formed rule set', () => {
+        it('validates as a well-formed rule set', () => {
             expect(loadCosting().type).toBe('COSTING');
+        });
+
+        it('looks the vendor up from the invoice number', () => {
+            const costing = loadCosting();
+            expect(costing.fields.vendorName).toMatchObject({
+                lookupFrom: 'invoiceNumber',
+                lookupTable: 'vendors'
+            });
         });
 
         it('accepts every real OutputBox/COSTING filename', () => {
@@ -358,43 +432,72 @@ describe('document-type-rules', () => {
                 .forEach((n) => expect(costing.validateRegex.test(n)).toBe(false));
         });
 
-        it('extracts the invoice number but not the vendor name', () => {
-            // Why COSTING ships disabled. The invoice number comes off the
-            // "INVOICE NO." label reliably; the vendor name does not, because
-            // letterheads are the most OCR-corrupted part of these pages and
-            // only some invoices carry a "VENDOR" label.
+        it('resolves the vendor by lookup when the prefix is known', () => {
             const { extractFields } = require('../document-naming-engine');
-            const costing = loadCosting();
+            const { values } = extractFields('INVOICE   NO.:   BIM-26-006\n', loadCosting());
+            expect(values).toMatchObject({
+                invoiceNumber: 'BIM-26-006',
+                vendorName: 'MOLAX TRADING LIMITED'
+            });
+        });
 
-            const noVendorLabel = extractFields(
-                'INVOICE   NO.:   BIM-26-006\nACCOUNT   NAME:   i,lOLAX TRADING   LIIMITED\n',
-                costing
+        it('falls back to the document when the prefix is unknown', () => {
+            // LAYLO's invoices are bare digits, so the lookup cannot key on them,
+            // but its documents carry a VENDOR label.
+            const { extractFields } = require('../document-naming-engine');
+            const { values } = extractFields(
+                'INVOICE NO.r   100456\nVENDOR  LAYLO   LLC  1035   SOUTH GRAND\n',
+                loadCosting()
             );
-            expect(noVendorLabel.values.invoiceNumber).toBe('BIM-26-006');
-            expect(noVendorLabel.missing).toContain('vendorName');
+            expect(values).toMatchObject({ invoiceNumber: '100456', vendorName: 'LAYLO LLC' });
+        });
 
-            const withVendorLabel = extractFields(
-                'INVOICE NO.r   100456  DATEr 13-06-2025\nVENDOR  LAYLO   LLC  1035   SOUTH GRAND\n',
-                costing
+        it('keeps the legal-form suffix that OCR spacing would otherwise truncate', () => {
+            // "VENDOR  LAYLO   LLC" must not yield "LAYLO"; the pattern anchors
+            // on the legal form rather than a whitespace run.
+            const { extractFields } = require('../document-naming-engine');
+            const cases = {
+                'VENDOR  LAYLO   LLC  1035 GRAND': 'LAYLO LLC',
+                'VENDOR  SHANGHAI NANCY SPORTING GOODS CO, LTD  10 ANSON':
+                    'SHANGHAI NANCY SPORTING GOODS CO, LTD',
+                'VENDOR  INKYUNG APPAREL LTD CO  SEOUL': 'INKYUNG APPAREL LTD CO'
+            };
+            for (const [text, vendor] of Object.entries(cases)) {
+                const { values } = extractFields(`INVOICE NO.: 999999\n${text}\n`, loadCosting());
+                expect({ text, vendor: values.vendorName }).toEqual({ text, vendor });
+            }
+        });
+
+        it('flags a document carrying neither an invoice number nor a labelled vendor', () => {
+            // The IDEAL invoice: its number appears nowhere in the document text,
+            // on any page, and its letterhead is the worst-OCR region of the page.
+            const { extractFields } = require('../document-naming-engine');
+            const { missing } = extractFields(
+                'IDf,AL   GROUP HOLDINGS   LIMITED  SAY TOTAL   US   DOLLARS\n',
+                loadCosting()
             );
-            expect(withVendorLabel.values.invoiceNumber).toBe('100456');
-            // Truncated: the pattern stops at the double space inside "LAYLO   LLC".
-            expect(withVendorLabel.values.vendorName).toBe('LAYLO');
+            expect(missing).toEqual(expect.arrayContaining(['invoiceNumber', 'vendorName']));
         });
     });
 
     describe('getDisabledTypeFolders', () => {
-        it('reports the folder hints of switched-off types', () => {
-            expect(getDisabledTypeFolders()).toEqual([
-                { type: 'COSTING', hints: ['costing', 'intake_costing'] }
-            ]);
+        it('reports nothing while every type is enabled', () => {
+            expect(getDisabledTypeFolders()).toEqual([]);
         });
 
-        it('excludes types that are enabled', () => {
-            const types = getDisabledTypeFolders().map((entry) => entry.type);
-            expect(types).not.toContain('CHECK');
-            expect(types).not.toContain('WIRE');
-            expect(types).not.toContain('GLJE');
+        it('reports a disabled type\'s folder hints', () => {
+            const dir = writeRulesDir({
+                'a.json': validRaw(),
+                'b.json': validRaw({
+                    type: 'OFF',
+                    enabled: false,
+                    classify: { folderHints: ['off', 'intake_off'] },
+                    template: 'OFF_{entity}',
+                    validate: '^OFF_'
+                })
+            });
+            expect(getDisabledTypeFolders({ dir }))
+                .toEqual([{ type: 'OFF', hints: ['off', 'intake_off'] }]);
         });
     });
 

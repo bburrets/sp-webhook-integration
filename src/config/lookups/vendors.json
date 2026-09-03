@@ -1,0 +1,30 @@
+{
+    "_note": "COSTING vendor names, keyed on invoice-number prefix. DERIVED from the 29 filenames in OutputBox/COSTING on 2026-09-02, which pair the business's own canonical spellings with their own invoice numbers. Not independently confirmed -- review the spellings against your standard. Longest matching prefix wins. A prefix that is absent falls through to reading the vendor from the document, so this map does not have to be complete.",
+    "_review": {
+        "8892": "COMPASS APPAREL INC and Compass Apparel Inc appear once each. Uppercase chosen because 13 of 19 vendor names in the library are uppercase.",
+        "B4K26": "BEG4KLOTHING, INC (7 files) chosen over Beg4Kloathing, Inc (1 file). Kloathing vs Klothing is a typo, not casing -- confirm which is right.",
+        "FAM-": "LOW CONFIDENCE. FAM-2023-0067-YC-YC23SHA41 looks like a FAM purchase-order reference rather than a vendor invoice number, so this prefix may be wrong or may collide with other vendors using FAM references. Only one file supports it.",
+        "EQ": "Two characters only. Would match any invoice starting EQ. Safe across the current 29 files.",
+        "RSLGAPZ / TISLFAM": "Two unrelated prefixes mapped to RAINBOW LINK (BANGLADESH) LTD. Confirm this is one supplier, not two filed under one name.",
+        "LAYLO LLC": "Deliberately ABSENT. Its invoices are bare digits (100456, 100457) with no prefix to key on, but its documents carry a VENDOR label, so it resolves via the extraction fallback instead."
+    },
+    "prefixes": {
+        "AIT": "Ai Trading Inc",
+        "B4K26": "BEG4KLOTHING, INC",
+        "8892": "COMPASS APPAREL INC",
+        "FAM-": "CROWN WISE INTERNATIONAL INDUSTRIAL LIMITED",
+        "GRTX": "GARTEX OVERSEAS LIMITED",
+        "IDL": "IDEAL GROUP HOLDINGS LIMITED",
+        "IKVF": "INKYUNG APPAREL LTD CO",
+        "JOFFAM": "Jumeirah Overseas FZE",
+        "BIM": "MOLAX TRADING LIMITED",
+        "GTGS": "R&G Global Limited Co",
+        "RSLGAPZ": "RAINBOW LINK (BANGLADESH) LTD",
+        "TISLFAM": "RAINBOW LINK (BANGLADESH) LTD",
+        "EQ": "SHANGHAI NANCY SPORTING GOODS CO, LTD",
+        "TGL": "TELIS GLOBAL LIMITED",
+        "YC": "YIA-CHYNS ENTERPRISE CO,LTD",
+        "YK": "YINTAK INTEX CO,LTD",
+        "UX": "Zhangjiagang Unitex Ltd Co"
+    }
+}

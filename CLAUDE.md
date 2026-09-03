@@ -80,11 +80,16 @@ For WIRE the two disagree: intake `Wire__$18,593.28_02_03_2026.pdf` vs output
 `WIRE_251103B02FHR_$237,800.00.pdf` (keyed on the U.S. Bank PAR Number, not a date).
 
 - Rules live in `src/config/document-types/{check,costing,glje,wire}.json`, validated at load time.
-  CHECK, WIRE and GLJE all extract end to end today. **COSTING is blocked and ships disabled**: its
-  convention is `{Vendor} -  {InvoiceNumber}.pdf` (separator is space-hyphen-space-space) and the
-  invoice number extracts fine, but the vendor name does not — letterheads are the most OCR-corrupted
-  part of the page (`IDEAL` reads as `IDf,AL`) and only some invoices carry a `VENDOR` label. Fix is
-  a vendor lookup keyed on the invoice-number prefix; needs the canonical vendor list.
+  All four types extract end to end. **COSTING resolves its vendor by LOOKUP, not extraction**:
+  the invoice prefix maps to a canonical name via `src/config/lookups/vendors.json`, because the page
+  carries several company names with no consistent label and the existing filenames spell the same
+  legal form eleven different ways. A prefix the map lacks falls through to reading a `VENDOR` label
+  off the page (how LAYLO resolves, its invoices being bare digits); neither path working means
+  `MissingFields`. The map was derived from the 29 filenames in OutputBox/COSTING and has a
+  `_review` block flagging its judgement calls.
+- **The placeholder interlock is PER TYPE.** A rule set marked `placeholder: true` cannot rename its
+  own files whatever `RENAME_DRY_RUN` says, but does not hold other types back. CHECK/WIRE/GLJE are
+  confirmed; COSTING is not, so it keeps proposing while the others can go live.
 - **GLJE's trailing 6-digit id is randomly generated**, not read from the document (confirmed
   2026-09-02). So a dry-run GLJE name will NOT equal what a live run produces — check the shape, not
   the value. A collision on it is bad luck, so the worker re-mints and retries; a collision on an
